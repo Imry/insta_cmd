@@ -1,0 +1,9 @@
+build_32/
+dist/
+.bkp/
+build/
+bkp2/
+.idea/
+__pycache__/
+auth.json
+cookie.json
