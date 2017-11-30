@@ -795,6 +795,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                     items.extend(results['users'])
                 items_u = [{k: v[k] for k in ['full_name', 'username', 'profile_pic_url']} for v in {v['pk']:v for v in items}.values()]
                 yield True, items_u, cursor
+                yield True, items, cursor
         except:
             return False, [], None
 
