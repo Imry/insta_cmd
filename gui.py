@@ -845,6 +845,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
 
             post['comment_simple'] = []
             post['comment_status'] = 0
+            post['comment_count'] = post.get('comment_count', 0)
             # if 'caption_simple' in post:
             #     post['comment_simple'].append({'username':post['user']['username'], 'text': post['caption_simple']})
             # post['comment_simple'].extend(get_media_comments(post['pk']))
