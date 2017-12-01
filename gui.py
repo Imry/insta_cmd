@@ -5,6 +5,7 @@ import csv, json, os, codecs, datetime, traceback
 import threading
 from multiprocessing.dummy import Pool
 import xlwt
+import logging
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtWidgets import QHeaderView, QMenu
@@ -86,6 +87,7 @@ def connect(username, password):
             return api
     except (ClientCookieExpiredError, ClientLoginRequiredError) as e:
         print('ClientCookieExpiredError/ClientLoginRequiredError: {0!s}'.format(e))
+        logging.error('ClientCookieExpiredError/ClientLoginRequiredError: {0!s}'.format(e))
         # Login expired
         # Do relogin but use default ua, keys and such
         try:
@@ -93,15 +95,19 @@ def connect(username, password):
             return api
         except Exception as e:
             print('Unexpected Exception: {0!s}'.format(e))
+            logging.error('Unexpected Exception: {0!s}'.format(e))
             return None
     except ClientLoginError as e:
         print('ClientLoginError {0!s}'.format(e))
+        logging.error('ClientLoginError {0!s}'.format(e))
         return None
     except ClientError as e:
         print('ClientError {0!s} (Code: {1:d}, Response: {2!s})'.format(e.msg, e.code, e.error_response))
+        logging.error('ClientError {0!s} (Code: {1:d}, Response: {2!s})'.format(e.msg, e.code, e.error_response))
         return None
     except Exception as e:
         print('Unexpected Exception: {0!s}'.format(e))
+        logging.error('Unexpected Exception: {0!s}'.format(e))
         return None
 
 
@@ -134,6 +140,44 @@ class Parser(QThread):
         self.worker = worker
 
 
+class Worker(QThread):
+    send_data = pyqtSignal(bool, str, str, list, str)
+    error = pyqtSignal()
+
+    def __init__(self):
+        QThread.__init__(self)
+        self.data = None
+        self.is_running = False
+        self.worker = None
+
+    def __del__(self):
+        self.wait()
+
+    def run(self):
+        if not self.data:
+            return
+        self.is_running = True
+        w = self.worker
+        d = self.data
+        worker = w['worker']
+        max_id = d.get(w['stage'] + '_cursor', None)
+        if max_id == '':
+            return
+        for ok, result, cursor in worker(d['id'], max_id=max_id):
+            if not self.is_running:
+                return
+            if not ok:
+                self.error.emit()
+                break
+            self.send_data.emit(ok, d['username'], w['stage'], result, str(cursor) if cursor != None else cursor)
+
+    def stop(self):
+        self.is_running = False
+
+    def set_data(self, data, worker):
+        self.data = data
+        self.worker = worker
+
 class Work(QThread):
     task = pyqtSignal(str)
     stage = pyqtSignal(str)
@@ -147,6 +191,9 @@ class Work(QThread):
         self.data = []
         self.is_running = False
         self.workers = []
+        self.max = {}
+        self.prog = {}
+        self.threads = []
 
     def __del__(self):
         self.wait()
@@ -156,31 +203,49 @@ class Work(QThread):
             return
         self.is_running = True
         for idx, d in enumerate(self.data):
+            if not self.is_running:
+                return
             self.task.emit('%s / %s'%(idx + 1, len(self.data)))
+            self.stage.emit(d['username'])
+            self.progress.emit(0)
             for w in self.workers:
-                stage = w['stage_name']
-                self.stage.emit(stage)
                 mx = d[w['stage'] + '_count']
-                self.set_max.emit(mx)
-                self.progress.emit(0)
-
+                self.max[w['stage']] = mx
+                self.prog[w['stage']] = len(d.get(w['stage'], []))
                 worker = w['worker']
-                for ok, result, cursor in worker(d['id']):
-                    if not self.is_running:
-                        return
-                    self.progress.emit(len(result))
-                    # print(len(result))
-                    self.send_data.emit(ok, d['username'], w['stage'], result, str(cursor) if cursor != None else cursor)
-                    if not ok:
-                        self.error.emit()
-                        break
+                ttt = Worker()
+                ttt.set_data(d, w)
+                ttt.error.connect(self.send_error)
+                ttt.send_data.connect(self.get_data)
+                ttt.start()
+                self.threads.append(ttt)
+
+            self.set_max.emit(sum([v for v in self.max.values()]))
+            self.progress.emit(sum([v for v in self.prog.values()]))
+
+            for t in self.threads:
+                t.wait()
+
+    def send_error(self):
+        self.error.emit()
 
     def stop(self):
         self.is_running = False
+        for t in self.threads:
+            t.stop()
 
     def set_data(self, data, workers):
         self.data = data
         self.workers = workers
+
+    def get_data(self, ok, user, stage, result, cursor):
+        self.prog[stage] += len(result)
+        self.progress.emit(sum([v for v in self.prog.values()]))
+        self.send_data.emit(ok, user, stage, result, str(cursor) if cursor != None else cursor)
+
+    def set_progress(self, v, worker):
+        self.prog[worker] += v
+        self.progress.emit(sum([v for v in self.prog.values()]))
 
 
 class CommentsLoader(QThread):
@@ -272,9 +337,16 @@ class DataModel(QtCore.QAbstractTableModel, Headers):
             media = len(row.get('media', []))
             following = len(row.get('following', []))
             follower = len(row.get('follower', []))
+
             if media + following + follower == 0:
                 return 'Не обработан'
             else:
+                if row.get('media_cursor', None) != '':
+                    media = str(media) + '+'
+                if row.get('following_cursor', None) != '':
+                    following = str(following) + '+'
+                if row.get('follower_cursor', None) != '':
+                    follower = str(follower) + '+'
                 return 'Постов: %s\nПодписок: %s\nПодписчиков: %s'%(media, following, follower)
         else:
             return row.get(col, None)
@@ -292,6 +364,16 @@ class DataModel(QtCore.QAbstractTableModel, Headers):
         for d in self.data:
             if d['username'] == username:
                 d[key] = value
+                break
+
+    def _append(self, username, key, value):
+        # if username[0] != '@': username = '@' + username
+        for d in self.data:
+            if d['username'] == username:
+                if key not in d:
+                    d[key] = value
+                else:
+                    d[key].extend(value)
                 break
 
     def _set2(self, username, key_value):
@@ -599,7 +681,8 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
             r = self.api.username_info(username)
             if r['status'] == 'ok':
                 return r['user']
-        except:
+        except Exception as e:
+            logging.error(e)
             return {}
 
     def save_data(self):
@@ -770,36 +853,38 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
 
         self.preparser.start()
 
-    def get_user_following(self, user_id):
+    def get_user_following(self, user_id, max_id=None):
         if not self.api:
-            return False, [], None
+            return False, [], max_id
         try:
             items = []
             items_u = set()
-            for results, cursor in pagination.page(self.api.user_following, args={'user_id': user_id}, wait=0):
+            for results, cursor in pagination.page(self.api.user_following, args={'user_id': user_id}, wait=0, max_id=max_id):
                 if results.get('users'):
-                    items.extend(results['users'])
+                    items = results['users']
                 items_u = [{k: v[k] for k in ['full_name', 'username', 'profile_pic_url']} for v in {v['pk']:v for v in items}.values()]
                 yield True, items_u, cursor
-        except:
-            return False, [], None
+        except Exception as e:
+            logging.error(e)
+            return False, [], max_id
 
-    def get_user_followers(self, user_id):
+    def get_user_followers(self, user_id, max_id=None):
         if not self.api:
-            return False, [], None
+            return False, [], max_id
         try:
             items = []
             items_u = set()
-            for results, cursor in pagination.page(self.api.user_followers, args={'user_id': user_id}, wait=0):
+            for results, cursor in pagination.page(self.api.user_followers, args={'user_id': user_id}, wait=0, max_id=max_id):
                 if results.get('users'):
-                    items.extend(results['users'])
+                    items = results['users']
                 items_u = [{k: v[k] for k in ['full_name', 'username', 'profile_pic_url']} for v in {v['pk']:v for v in items}.values()]
-                yield True, items_u, cursor
+                # yield True, items_u, cursor
                 yield True, items, cursor
-        except:
-            return False, [], None
+        except Exception as e:
+            logging.error(e)
+            return False, [], max_id
 
-    def get_user_media(self, user_id):
+    def get_user_media(self, user_id, max_id = None):
         def prepare_post(post):
             if 'location' in post and post['location'] != None:
                 loc = []
@@ -854,23 +939,25 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
             return post
 
         if not self.api:
-            return False, [], None
+            return False, [], max_id
         try:
             items = []
             items_u = set()
-            for results, cursor in pagination.page(self.api.user_feed, args={'user_id': user_id}, wait=0):
+            for results, cursor in pagination.page(self.api.user_feed, args={'user_id': user_id}, wait=0, max_id=max_id):
                 if results.get('items'):
-                    items.extend([prepare_post(p) for p in results['items']])
+                    items = [prepare_post(p) for p in results['items']]
                 items_u = sorted([v for v in {v['pk']:v for v in items}.values()], key=lambda x: x['taken_at'], reverse=True)
                 yield True, items_u, cursor
         except Exception as e:
             print(e)
-            return False, [], None
+            logging.error(e)
+            return False, [], max_id
 
     def work_progress(self, ok, username, stage, data, cursor):
         if ok:
             self.model.beginResetModel()
-            self.model._set2(username, {stage: data, stage + '_cursor': cursor})
+            self.model._set(username, stage + '_cursor', cursor)
+            self.model._append(username, stage, data)
             self.model.endResetModel()
             # if self.last_select == username:
             #     d = self.model._get(username)
@@ -891,6 +978,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         self.show_errors()
         self.sb_progress.setValue(0)
 
+        self.work = Work()
         self.btn_stop.clicked.connect(self.work.stop)
         self.work.task.connect(self.sb_items.setText)
         self.work.stage.connect(self.sb_stage.setText)
@@ -922,7 +1010,8 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                     items.extend([prepare_comment(c) for c in results['comments']])
                 items_u = sorted([v for v in {v['pk']: v for v in items}.values()], key=lambda x: x['created_at_utc'], reverse=False)
             yield True, items_u, cursor
-        except:
+        except Exception as e:
+            logging.error(e)
             return False, [], None
 
     def comments_progress(self, ok, username, media_id, result, cursor):
@@ -971,6 +1060,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         self.btn_stop.setEnabled(False)
         self.btn_filter.setEnabled(True)
         self.btn_filter_settings.setEnabled(True)
+        self.sb_progress.setValue(self.sb_progress.maximum())
 
     def set_progress_work(self):
         self.btn_start.setEnabled(False)

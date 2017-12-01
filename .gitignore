@@ -7,3 +7,5 @@ bkp2/
 __pycache__/
 auth.json
 cookie.json
+*.spec
+*.log
