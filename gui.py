@@ -164,12 +164,12 @@ class Worker(QThread):
         if max_id == '':
             return
         for ok, result, cursor in worker(d['id'], max_id=max_id):
-            if not self.is_running:
-                return
             if not ok:
                 self.error.emit()
                 break
             self.send_data.emit(ok, d['username'], w['stage'], result, str(cursor) if cursor != None else cursor)
+            if not self.is_running:
+                return
 
     def stop(self):
         self.is_running = False
