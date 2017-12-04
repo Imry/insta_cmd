@@ -8,7 +8,7 @@ import queue
 from PyQt5.QtCore import QThread, pyqtSignal
 
 
-def getter(result, kwargs, cursor_key='max_id', get_cursor=lambda r: r.get('next_max_id')):
+def getter(result, args, kwargs, cursor_key='max_id', get_cursor=lambda r: r.get('next_max_id')):
     cursor = get_cursor(result)
     if cursor:
         kwargs[cursor_key] = cursor
@@ -38,9 +38,9 @@ class Worker(QThread):
                 fn, args, kwargs, setter, getter = self.tasks.get(block=False)
                 result = fn(*args, **kwargs)
                 self.data.emit({'result': result, 'setter': setter, 'fn': fn, 'args': args, 'kwargs': kwargs})
-                ok, kwargs = getter(result, kwargs)
+                ok, kwargs = getter(result, args, kwargs)
                 if ok:
-                    self.tasks.put({'result': result, 'setter': setter, 'fn': fn, 'args': args, 'kwargs': kwargs})
+                    self.tasks.put((fn, args, kwargs, setter, getter))
                 if self.need_stop:
                     return
             except queue.Empty as e:

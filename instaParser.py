@@ -13,7 +13,7 @@ from gui import Main
 
 
 logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(filename)-16s %(funcName)-16s %(levelname)-8s: %(message)s',
+                    format='%(asctime)s %(filename)-16s %(funcName)-16s:%(lineno)s %(levelname)-8s: %(message)s',
                     handlers=[logging.FileHandler(os.path.join(os.path.dirname(__file__), __file__ + '.log'), 'a+', 'utf-8')])
 logging.info('==================================================')
 

@@ -129,6 +129,11 @@ class DataModel(QtCore.QAbstractTableModel, Headers):
             if d['username'] == username:
                 return d
 
+    def find_id(self, id):
+        for d in self.data:
+            if d['id'] == id:
+                return d['username']
+
 class PostModel(QtCore.QAbstractTableModel, Headers):
     def __init__(self, parent=None, *args):
         QtCore.QAbstractTableModel.__init__(self, parent, *args)
@@ -627,28 +632,28 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
     def get_work_data(self, data):
         data.get('setter')(data.get('result'), data.get('args'), data.get('kwargs'))
 
-    def update_list_data(self, username, data, kwargs, get_cursor=lambda r: r.get('next_max_id')):
+    def update_list_data(self, id, data, result, get_cursor=lambda r: r.get('next_max_id')):
         self.model.beginResetModel()
-        self.model._set(username, 'following_cursor', get_cursor(kwargs))
-        self.model._append(username, 'following', data)
+        self.model._set(self.model.find_id(id), 'following_cursor', get_cursor(result))
+        self.model._append(self.model.find_id(id), 'following', data)
         self.model.endResetModel()
 
     def following_setter(self, result, args, kwargs):
         data = [{k: v[k] for k in ['full_name', 'username', 'profile_pic_url']} for v in
                    {v['pk']: v for v in result.get('users', [])}.values()]
         if data:
-            self.update_list_data(args[0], data, kwargs)
+            self.update_list_data(args[0], data, result)
 
     def follower_setter(self, result, args, kwargs):
         data = [{k: v[k] for k in ['full_name', 'username', 'profile_pic_url']} for v in
-                   {v['pk']: v for v in result('users', [])}.values()]
+                   {v['pk']: v for v in result.get('users', [])}.values()]
         if data:
-            self.update_list_data(args[0], data, kwargs)
+            self.update_list_data(args[0], data, result)
 
     def media_setter(self, result, args, kwargs):
         data = [self.prepare_post(p) for p in result.get('items', [])]
         if data:
-            self.update_list_data(args[0], data, kwargs)
+            self.update_list_data(args[0], data, result)
 
     def load_user_media(self):
         data = [self.model.data[s] for s in
