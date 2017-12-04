@@ -336,7 +336,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         self.last_select = ''
 
         self.preparser = pool.Parser(worker=self.load_user_info)
-        self.work = pool.Work()
+        # self.work = pool.Work()
         self.comments_loader = pool.CommentsLoader(worker=self.get_media_comments)
 
         self.errors = 0
@@ -538,60 +538,60 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
             logging.error(e)
             return False, [], max_id
 
+    def prepare_post(self, post):
+        if 'location' in post and post['location'] != None:
+            loc = []
+            location = post['location']
+            for l in ['name', 'address', 'sity']:
+                ll = location.get(l, '')
+                if ll != '':
+                    loc.append(ll)
+            post['location_simple'] = '%s\n%s'%(
+                ', '.join(loc),
+                'https://www.instagram.com/explore/locations/%s/'%location['pk']
+            )
+        else:
+            post['location_simple'] = ''
+
+        post['taken_at_simple'] = datetime.datetime.fromtimestamp(post['taken_at']).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        def get_best_media(images):
+            return sorted(images, key=lambda  x: x['width'], reverse=True)[0]['url']
+
+        if post['media_type'] == 1:
+            post['media_simple'] = get_best_media(post['image_versions2']['candidates'])
+        elif post['media_type'] == 2:
+            post['media_simple'] = get_best_media(post['video_versions'])
+        elif post['media_type'] == 8:
+            media = []
+            for pm in post['carousel_media']:
+                if pm['media_type'] == 1:
+                    media.append(get_best_media(pm['image_versions2']['candidates']))
+                elif pm['media_type'] == 2:
+                    media.append(get_best_media(pm['video_versions']))
+                else:
+                    None
+            post['media_simple'] = '\n'.join(media)
+        else:
+            post['media_simple'] = ''
+
+        if 'caption' in post and post['caption'] != None:
+            post['caption_simple'] = post['caption']['text']
+        else:
+            post['caption_simple'] = ''
+
+        post['url'] = 'https://www.instagram.com/p/%s/'%post['code']
+
+        post['comment_simple'] = []
+        post['comment_status'] = 0
+        post['comment_count'] = post.get('comment_count', 0)
+        # if 'caption_simple' in post:
+        #     post['comment_simple'].append({'username':post['user']['username'], 'text': post['caption_simple']})
+        # post['comment_simple'].extend(get_media_comments(post['pk']))
+
+        return post
+
     def get_user_media(self, user_id, max_id = None):
-        def prepare_post(post):
-            if 'location' in post and post['location'] != None:
-                loc = []
-                location = post['location']
-                for l in ['name', 'address', 'sity']:
-                    ll = location.get(l, '')
-                    if ll != '':
-                        loc.append(ll)
-                post['location_simple'] = '%s\n%s'%(
-                    ', '.join(loc),
-                    'https://www.instagram.com/explore/locations/%s/'%location['pk']
-                )
-            else:
-                post['location_simple'] = ''
-
-            post['taken_at_simple'] = datetime.datetime.fromtimestamp(post['taken_at']).strftime('%Y-%m-%dT%H:%M:%SZ')
-
-            def get_best_media(images):
-                return sorted(images, key=lambda  x: x['width'], reverse=True)[0]['url']
-
-            if post['media_type'] == 1:
-                post['media_simple'] = get_best_media(post['image_versions2']['candidates'])
-            elif post['media_type'] == 2:
-                post['media_simple'] = get_best_media(post['video_versions'])
-            elif post['media_type'] == 8:
-                media = []
-                for pm in post['carousel_media']:
-                    if pm['media_type'] == 1:
-                        media.append(get_best_media(pm['image_versions2']['candidates']))
-                    elif pm['media_type'] == 2:
-                        media.append(get_best_media(pm['video_versions']))
-                    else:
-                        None
-                post['media_simple'] = '\n'.join(media)
-            else:
-                post['media_simple'] = ''
-
-            if 'caption' in post and post['caption'] != None:
-                post['caption_simple'] = post['caption']['text']
-            else:
-                post['caption_simple'] = ''
-
-            post['url'] = 'https://www.instagram.com/p/%s/'%post['code']
-
-            post['comment_simple'] = []
-            post['comment_status'] = 0
-            post['comment_count'] = post.get('comment_count', 0)
-            # if 'caption_simple' in post:
-            #     post['comment_simple'].append({'username':post['user']['username'], 'text': post['caption_simple']})
-            # post['comment_simple'].extend(get_media_comments(post['pk']))
-
-            return post
-
         if not self.api:
             return False, [], max_id
         try:
@@ -599,7 +599,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
             items_u = set()
             for results, cursor in pagination.page(self.api.user_feed, args={'user_id': user_id}, wait=0, max_id=max_id):
                 if results.get('items'):
-                    items = [prepare_post(p) for p in results['items']]
+                    items = [self.prepare_post(p) for p in results['items']]
                 items_u = sorted([v for v in {v['pk']:v for v in items}.values()], key=lambda x: x['taken_at'], reverse=True)
                 yield True, items_u, cursor
         except Exception as e:
@@ -621,34 +621,81 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         else:
             self.increase_errors()
 
+
+
+
+    def get_work_data(self, data):
+        data.get('setter')(data.get('result'), data.get('args'), data.get('kwargs'))
+
+    def update_list_data(self, username, data, kwargs, get_cursor=lambda r: r.get('next_max_id')):
+        self.model.beginResetModel()
+        self.model._set(username, 'following_cursor', get_cursor(kwargs))
+        self.model._append(username, 'following', data)
+        self.model.endResetModel()
+
+    def following_setter(self, result, args, kwargs):
+        data = [{k: v[k] for k in ['full_name', 'username', 'profile_pic_url']} for v in
+                   {v['pk']: v for v in result.get('users', [])}.values()]
+        if data:
+            self.update_list_data(args[0], data, kwargs)
+
+    def follower_setter(self, result, args, kwargs):
+        data = [{k: v[k] for k in ['full_name', 'username', 'profile_pic_url']} for v in
+                   {v['pk']: v for v in result('users', [])}.values()]
+        if data:
+            self.update_list_data(args[0], data, kwargs)
+
+    def media_setter(self, result, args, kwargs):
+        data = [self.prepare_post(p) for p in result.get('items', [])]
+        if data:
+            self.update_list_data(args[0], data, kwargs)
+
     def load_user_media(self):
-        data = [self.model.data[s] for s in [i.row() for i in self.user_list.selectionModel().selectedRows()] if self.model.data[s].get('id', None) != None]
+        data = [self.model.data[s] for s in
+            [i.row() for i in self.user_list.selectionModel().selectedRows()]
+            if self.model.data[s].get('id', None) != None]
         if len(data) == 0:
             return
 
         self.set_progress_work()
-
         self.errors = 0
         self.show_errors()
         self.sb_progress.setValue(0)
 
-        self.work = pool.Work()
-        self.btn_stop.clicked.connect(self.work.stop)
-        self.work.task.connect(self.sb_items.setText)
-        self.work.stage.connect(self.sb_stage.setText)
-        self.work.set_max.connect(self.sb_progress.setMaximum)
-        self.work.progress.connect(self.sb_progress.setValue)
-        self.work.error.connect(self.increase_errors)
-        self.work.send_data.connect(self.work_progress)
+        tasks = []
+        stage_fn = {
+            'media': self.api.user_feed,
+            'following': self.api.user_following,
+            'follower': self.api.user_followers
+        }
+        for d in data:
+            # fn, args, kwargs, setter, getter = self.tasks.get()
+            for stage in ['media', 'following', 'follower']:
+                if d.get(stage + '_count', 0) > 0 and d.get(stage + '_cursor', None) != '':
+                    tasks.append((stage_fn[stage], [d['id']], {'next_max_id': d.get(stage + '_cursor', None)}, getattr(self, stage + '_setter'), pool.getter))
+
+        self.work = pool.Work(self, tasks, 10)
         self.work.finished.connect(self.set_progress_ready)
-
-        self.work.set_data(data, [
-            {'stage_name': 'Загрузка постов', 'stage': 'media', 'worker': self.get_user_media},
-            {'stage_name': 'Загрузка подписок', 'stage': 'following', 'worker': self.get_user_following},
-            {'stage_name': 'Загрузка подписчиков', 'stage': 'follower', 'worker': self.get_user_followers},
-        ])
-
         self.work.start()
+
+
+        # self.work = pool.Work()
+        # self.btn_stop.clicked.connect(self.work.stop)
+        # self.work.task.connect(self.sb_items.setText)
+        # self.work.stage.connect(self.sb_stage.setText)
+        # self.work.set_max.connect(self.sb_progress.setMaximum)
+        # self.work.progress.connect(self.sb_progress.setValue)
+        # self.work.error.connect(self.increase_errors)
+        # self.work.send_data.connect(self.work_progress)
+        # self.work.finished.connect(self.set_progress_ready)
+        #
+        # self.work.set_data(data, [
+        #     {'stage_name': 'Загрузка постов', 'stage': 'media', 'worker': self.get_user_media},
+        #     {'stage_name': 'Загрузка подписок', 'stage': 'following', 'worker': self.get_user_following},
+        #     {'stage_name': 'Загрузка подписчиков', 'stage': 'follower', 'worker': self.get_user_followers},
+        # ])
+        #
+        # self.work.start()
 
     def get_media_comments(self, media_id):
         if not self.api:

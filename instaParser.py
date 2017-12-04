@@ -3,6 +3,7 @@
 
 
 import logging
+import os
 import sys
 import traceback
 
@@ -10,10 +11,10 @@ from PyQt5.QtWidgets import QApplication
 
 from gui import Main
 
-logging_filename = sys.argv[0] + '.log'
+
 logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(filename)-16s %(levelname)-8s: %(message)s',
-                    handlers=[logging.FileHandler(logging_filename, 'a+', 'utf-8')])
+                    format='%(asctime)s %(filename)-16s %(funcName)-16s %(levelname)-8s: %(message)s',
+                    handlers=[logging.FileHandler(os.path.join(os.path.dirname(__file__), __file__ + '.log'), 'a+', 'utf-8')])
 logging.info('==================================================')
 
 def my_excepthook(type, value, tback):
