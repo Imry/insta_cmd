@@ -78,7 +78,9 @@ def get_user_media(name, max_id = ''):
 
 if __name__ == '__main__':
 
-    data = get_user_info('zfggsdfgasfshewrtdfhngfdfgsdfgsdfg')
+    data = get_user_info('shota_rigvava')
+    print(data)
+
 
     # for i in get_user_media('yana__berezka'):
     #     print(len(i))

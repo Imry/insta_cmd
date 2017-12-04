@@ -4,7 +4,6 @@
 import csv, json, os, codecs, datetime, traceback
 import threading
 from multiprocessing.dummy import Pool
-import xlwt
 import logging
 
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -25,272 +24,13 @@ from instagram_private_api import (
 # import url_parser
 
 import pagination
+import excel
+import api
+import pool
 
 AUTH_FILE_NAME = 'auth.json'
 COOKIE_FILE = 'cookie.json'
 
-
-class Connector(QThread):
-    status = pyqtSignal(str)
-
-    def __init__(self, api):
-        QThread.__init__(self)
-        self.api = api
-        self.username = ''
-        self.password = ''
-        self.action = True
-
-    def __del__(self):
-        self.wait()
-
-    def run(self):
-        self.status.emit('Подключение...')
-        self.api = connect(self.username, self.password)
-        if self.api is None:
-            self.status.emit('Не подключено')
-        else:
-            self.status.emit('Подключено')
-
-def connect(username, password):
-    def to_json(python_object):
-        if isinstance(python_object, bytes):
-            return {'__class__': 'bytes',
-                    '__value__': codecs.encode(python_object, 'base64').decode()}
-        raise TypeError(repr(python_object) + ' is not JSON serializable')
-
-    def from_json(json_object):
-        if '__class__' in json_object and json_object['__class__'] == 'bytes':
-            return codecs.decode(json_object['__value__'].encode(), 'base64')
-        return json_object
-
-    def onlogin_callback(api, new_settings_file):
-        cache_settings = api.settings
-        with open(new_settings_file, 'w') as outfile:
-            json.dump(cache_settings, outfile, default=to_json, indent=4)
-            print('SAVED: {0!s}'.format(new_settings_file))
-
-    device_id = None
-    try:
-        if not os.path.isfile(COOKIE_FILE):
-            # settings file does not exist
-            print('Unable to find file: {0!s}'.format(COOKIE_FILE))
-            # login new
-            api = Client(username, password, on_login=lambda x: onlogin_callback(x, COOKIE_FILE))
-            return api
-        else:
-            with open(COOKIE_FILE) as file_data:
-                cached_settings = json.load(file_data, object_hook=from_json)
-            print('Reusing settings: {0!s}'.format(COOKIE_FILE))
-            device_id = cached_settings.get('device_id')
-            # reuse auth settings
-            api = Client(username, password, settings=cached_settings)
-            return api
-    except (ClientCookieExpiredError, ClientLoginRequiredError) as e:
-        print('ClientCookieExpiredError/ClientLoginRequiredError: {0!s}'.format(e))
-        logging.error('ClientCookieExpiredError/ClientLoginRequiredError: {0!s}'.format(e))
-        # Login expired
-        # Do relogin but use default ua, keys and such
-        try:
-            api = Client(username, password, device_id=device_id, on_login=lambda x: onlogin_callback(x, COOKIE_FILE))
-            return api
-        except Exception as e:
-            print('Unexpected Exception: {0!s}'.format(e))
-            logging.error('Unexpected Exception: {0!s}'.format(e))
-            return None
-    except ClientLoginError as e:
-        print('ClientLoginError {0!s}'.format(e))
-        logging.error('ClientLoginError {0!s}'.format(e))
-        return None
-    except ClientError as e:
-        print('ClientError {0!s} (Code: {1:d}, Response: {2!s})'.format(e.msg, e.code, e.error_response))
-        logging.error('ClientError {0!s} (Code: {1:d}, Response: {2!s})'.format(e.msg, e.code, e.error_response))
-        return None
-    except Exception as e:
-        print('Unexpected Exception: {0!s}'.format(e))
-        logging.error('Unexpected Exception: {0!s}'.format(e))
-        return None
-
-
-class Parser(QThread):
-    progress = pyqtSignal(int)
-
-    def __init__(self, worker):
-        QThread.__init__(self)
-        self.worker = worker
-        self.data = []
-
-    def __del__(self):
-        self.wait()
-
-    def run(self):
-        self.is_running = True
-        for i, d in enumerate(self.data):
-            if not self.is_running:
-                return
-            self.worker(d)
-            self.progress.emit(i + 1)
-
-    def stop(self):
-        self.is_running = False
-
-    def set_data(self, data):
-        self.data = data
-
-    def set_worker(self, worker):
-        self.worker = worker
-
-
-class Worker(QThread):
-    send_data = pyqtSignal(bool, str, str, list, str)
-    error = pyqtSignal()
-
-    def __init__(self):
-        QThread.__init__(self)
-        self.data = None
-        self.is_running = False
-        self.worker = None
-
-    def __del__(self):
-        self.wait()
-
-    def run(self):
-        if not self.data:
-            return
-        self.is_running = True
-        w = self.worker
-        d = self.data
-        worker = w['worker']
-        max_id = d.get(w['stage'] + '_cursor', None)
-        if max_id == '':
-            return
-        for ok, result, cursor in worker(d['id'], max_id=max_id):
-            if not ok:
-                self.error.emit()
-                break
-            self.send_data.emit(ok, d['username'], w['stage'], result, str(cursor) if cursor != None else cursor)
-            if not self.is_running:
-                return
-
-    def stop(self):
-        self.is_running = False
-
-    def set_data(self, data, worker):
-        self.data = data
-        self.worker = worker
-
-class Work(QThread):
-    task = pyqtSignal(str)
-    stage = pyqtSignal(str)
-    set_max = pyqtSignal(int)
-    progress = pyqtSignal(int)
-    send_data = pyqtSignal(bool, str, str, list, str)
-    error = pyqtSignal()
-
-    def __init__(self):
-        QThread.__init__(self)
-        self.data = []
-        self.is_running = False
-        self.workers = []
-        self.max = {}
-        self.prog = {}
-        self.threads = []
-
-    def __del__(self):
-        self.wait()
-
-    def run(self):
-        if len(self.data) == 0:
-            return
-        self.is_running = True
-        for idx, d in enumerate(self.data):
-            if not self.is_running:
-                return
-            self.task.emit('%s / %s'%(idx + 1, len(self.data)))
-            self.stage.emit(d['username'])
-            self.progress.emit(0)
-            for w in self.workers:
-                mx = d[w['stage'] + '_count']
-                self.max[w['stage']] = mx
-                self.prog[w['stage']] = len(d.get(w['stage'], []))
-                worker = w['worker']
-                ttt = Worker()
-                ttt.set_data(d, w)
-                ttt.error.connect(self.send_error)
-                ttt.send_data.connect(self.get_data)
-                ttt.start()
-                self.threads.append(ttt)
-
-            self.set_max.emit(sum([v for v in self.max.values()]))
-            self.progress.emit(sum([v for v in self.prog.values()]))
-
-            for t in self.threads:
-                t.wait()
-
-    def send_error(self):
-        self.error.emit()
-
-    def stop(self):
-        self.is_running = False
-        for t in self.threads:
-            t.stop()
-
-    def set_data(self, data, workers):
-        self.data = data
-        self.workers = workers
-
-    def get_data(self, ok, user, stage, result, cursor):
-        self.prog[stage] += len(result)
-        self.progress.emit(sum([v for v in self.prog.values()]))
-        self.send_data.emit(ok, user, stage, result, str(cursor) if cursor != None else cursor)
-
-    def set_progress(self, v, worker):
-        self.prog[worker] += v
-        self.progress.emit(sum([v for v in self.prog.values()]))
-
-
-class CommentsLoader(QThread):
-    task = pyqtSignal(str)
-    set_max = pyqtSignal(int)
-    progress = pyqtSignal(int)
-    send_data = pyqtSignal(bool, str, str, list, str)
-    error = pyqtSignal()
-
-    def __init__(self, worker):
-        QThread.__init__(self)
-        self.data = []
-        self.is_running = False
-        self.worker = worker
-        self.username = None
-
-    def __del__(self):
-        self.wait()
-
-    def run(self):
-        if self.username is None:
-            return
-        if len(self.data) == 0:
-            return
-        self.is_running = True
-        for idx, d in enumerate(self.data):
-            self.task.emit('%s / %s'%(idx + 1, len(self.data)))
-            self.set_max.emit(d['comment_count'])
-            self.progress.emit(0)
-
-            for ok, result, cursor in self.worker(d['pk']):
-                if not self.is_running:
-                    return
-                self.progress.emit(len(result))
-                self.send_data.emit(ok, self.username, str(d['pk']), result, str(cursor) if cursor != None else cursor)
-                if not ok:
-                    self.error.emit()
-                    break
-
-    def stop(self):
-        self.is_running = False
-
-    def set_data(self, username, data):
-        self.username = username
-        self.data = data
 
 class Headers():
     def __init__(self):
@@ -551,7 +291,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
             with open(AUTH_FILE_NAME, 'r', encoding='utf-8') as auth_fn:
                 auth = json.load(auth_fn)
         self.api = None
-        self.connector = Connector(self.api)
+        self.connector = api.Connector(self.api, COOKIE_FILE)
 
         self.settings_dialog = Settings(auth['username'], auth['password'])
         self.filter_dialog = Filter()
@@ -595,17 +335,16 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
 
         self.last_select = ''
 
-        self.preparser = Parser(worker=self.load_user_info)
-        self.work = Work()
-        self.comments_loader = CommentsLoader(worker=self.get_media_comments)
+        self.preparser = pool.Parser(worker=self.load_user_info)
+        self.work = pool.Work()
+        self.comments_loader = pool.CommentsLoader(worker=self.get_media_comments)
 
         self.errors = 0
         self.prepare_status_bar()
         self.set_progress_ready()
         self._connect_all()
+
         self.login(auth['username'], auth['password'])
-
-
 
     def prepare_status_bar(self):
         self.sb_connection = QtWidgets.QLabel('')
@@ -674,6 +413,17 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                     self.sb_items.setText('%s / %s'%(l, l))
                     self.sb_stage.setText('Загружены пользователи')
 
+    def save_data(self):
+        data = [self.model.data[s] for s in [i.row() for i in self.user_list.selectionModel().selectedRows()] if self.model.data[s].get('id', None) != None]
+        if len(data) == 0:
+            return
+        file = str(QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory"))
+        for d in data:
+            try:
+                excel.save_user(d, os.path.join(file, d['username'] + '.xls'))
+            except Exception as e:
+                logging.error(e)
+
     def get_user_info(self,username):
         if not self.api:
             return {}
@@ -684,102 +434,6 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         except Exception as e:
             logging.error(e)
             return {}
-
-    def save_data(self):
-        data = [self.model.data[s] for s in [i.row() for i in self.user_list.selectionModel().selectedRows()] if self.model.data[s].get('id', None) != None]
-        if len(data) == 0:
-            return
-
-        file = str(QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory"))
-        if file:
-            print(file)
-
-        def save_user(data, fname):
-            book = xlwt.Workbook(encoding="utf-8")
-            sheet1 = book.add_sheet("user_info")
-            sheet2 = book.add_sheet("posts")
-            style = xlwt.easyxf('font: underline single')
-
-            sheet1.write(0, 0, 'IULogin')
-            sheet1.write(1, 0, data['username'])
-            sheet1.write(2, 0, xlwt.Formula('HYPERLINK("%s";"%s")' % (
-            'http://www.instagram.com/%s/' % data['username'], 'instagram.com/%s/' % data['username'])), style)
-            # sheet1.col(0).width = 256 * 50
-
-            sheet1.write(0, 1, 'IUFoto')
-            sheet1.write(1, 1, xlwt.Formula('HYPERLINK("file:%s";"%s")' % (data['img'], data['img'])), style)
-            # sheet1.col(1).width = 256 * 50
-
-            sheet1.write(0, 2, 'IUName')
-            sheet1.write(1, 2, data['full_name'])
-
-            sheet1.write(0, 3, 'IUSite')
-            sheet1.write(1, 3, data['external_url'])
-            # sheet1.col(3).width = 256 * 50
-
-            sheet1.write(0, 4, 'IUNote')
-            sheet1.write(1, 4, data['biography'])
-            # sheet1.col(4).width = 256 * 50
-
-            sheet1.write(0, 5, 'IULoginOut')
-            sheet1.write(1, 5, data['follower_count'])
-            sheet1.write(2, 5, 'IULogin')
-            sheet1.write(2, 6, 'IUName')
-            sheet1.write(2, 7, 'IUFoto')
-            for idx, f in enumerate(data.get('follower', [])):
-                sheet1.write(3 + idx, 5, f['username'])
-                sheet1.write(3 + idx, 6, f['full_name'])
-                sheet1.write(3 + idx, 7,
-                             xlwt.Formula('HYPERLINK("%s";"%s")' % (f['profile_pic_url'], f['profile_pic_url'])), style)
-
-            sheet1.write(0, 9, 'IULoginIn')
-            sheet1.write(1, 9, data['following_count'])
-            sheet1.write(2, 9, 'IULogin')
-            sheet1.write(2, 10, 'IUName')
-            sheet1.write(2, 11, 'IUFoto')
-            for idx, f in enumerate(data.get('following', [])):
-                sheet1.write(3 + idx, 9, f['username'])
-                sheet1.write(3 + idx, 10, f['full_name'])
-                sheet1.write(3 + idx, 11,
-                             xlwt.Formula('HYPERLINK("%s";"%s")' % (f['profile_pic_url'], f['profile_pic_url'])), style)
-
-            sheet2.write(0, 0, data['media_count'])
-            sheet2.write(1, 0, 'IPUrl')
-            sheet2.write(1, 1, 'IPLocation')
-            sheet2.write(1, 2, 'IPDate')
-            sheet2.write(1, 3, 'IPLike')
-            sheet2.write(1, 4, 'IPFoto')
-            sheet2.write(1, 5, 'IPComments')
-
-            shift = 2
-            for p in data.get('media', []):
-                sheet2.write(shift, 0, p['url'])
-                l = []
-                if 'location_simple' in p:
-                    l = p['location_simple'].split('\n')
-                    sheet2.write(shift, 1, l[0])
-                    sheet2.write(shift + 1, 1, xlwt.Formula('HYPERLINK("%s";"%s")' % (l[1], l[1])), style)
-                sheet2.write(shift, 2, p['taken_at_simple'])
-                sheet2.write(shift, 3, p['like_count'])
-                m = p['media_simple'].split('\n')
-                for idx, mm in enumerate(m):
-                    sheet2.write(shift + idx, 4, xlwt.Formula('HYPERLINK("%s";"%s")' % (mm, mm)), style)
-                c = p['comment_simple']
-                for idx, cc in enumerate(c):
-                    sheet2.write(shift + idx, 5, cc['username'])
-                    sheet2.write(shift + idx, 6, cc['text'])
-
-                shift += max([1, len(l), len(m), len(c)])
-
-            book.save(fname)
-
-
-        for d in data:
-            try:
-                save_user(d, os.path.join(file, d['username'] + '.xls'))
-            except:
-                None
-
 
     def load_user_info(self, username):
         # ui = url_parser.get_user_info(username)
@@ -978,7 +632,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         self.show_errors()
         self.sb_progress.setValue(0)
 
-        self.work = Work()
+        self.work = pool.Work()
         self.btn_stop.clicked.connect(self.work.stop)
         self.work.task.connect(self.sb_items.setText)
         self.work.stage.connect(self.sb_stage.setText)
@@ -1009,7 +663,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                 if results.get('comments'):
                     items.extend([prepare_comment(c) for c in results['comments']])
                 items_u = sorted([v for v in {v['pk']: v for v in items}.values()], key=lambda x: x['created_at_utc'], reverse=False)
-            yield True, items_u, cursor
+                yield True, items_u, cursor
         except Exception as e:
             logging.error(e)
             return False, [], None
@@ -1072,12 +726,6 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
 
     def set_status(self, status):
         self.sb_connection.setText(status)
-
-    def check_credentials(self, username, password):
-        if self.api:
-            return self.api.username == username and self.api.password == password
-        else:
-            return False
 
     def filter_settings(self):
         info_gm = self.filter_dialog.frameGeometry()
@@ -1143,6 +791,12 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         else:
             self.settings_dialog.username.setText(old_username)
             self.settings_dialog.password.setText(old_password)
+
+    def check_credentials(self, username, password):
+        if self.api:
+            return self.api.username == username and self.api.password == password
+        else:
+            return False
 
     def settings_login(self):
         if not self.connector.isRunning():

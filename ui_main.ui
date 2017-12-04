@@ -266,6 +266,9 @@
     <property name="title">
      <string>Файл</string>
     </property>
+    <addaction name="action_3"/>
+    <addaction name="action_2"/>
+    <addaction name="separator"/>
     <addaction name="action_load"/>
     <addaction name="action_save"/>
     <addaction name="separator"/>
@@ -286,7 +289,7 @@
   <widget class="QStatusBar" name="statusbar"/>
   <action name="action_load">
    <property name="text">
-    <string>Загрузить...</string>
+    <string>Загрузить проект</string>
    </property>
   </action>
   <action name="action_exit">
@@ -314,7 +317,17 @@
   </action>
   <action name="action_save">
    <property name="text">
-    <string>Сохранить...</string>
+    <string>Сохранить проект</string>
+   </property>
+  </action>
+  <action name="action_2">
+   <property name="text">
+    <string>Экспорт пользователей</string>
+   </property>
+  </action>
+  <action name="action_3">
+   <property name="text">
+    <string>Импорт пользователей</string>
    </property>
   </action>
  </widget>
