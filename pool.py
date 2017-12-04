@@ -16,9 +16,6 @@ def getter(result, args, kwargs, cursor_key='max_id', get_cursor=lambda r: r.get
     else:
         return False, None
 
-def setter(data, result):
-    None
-
 class Worker(QThread):
     data = pyqtSignal(object)
     error = pyqtSignal()
@@ -57,7 +54,7 @@ class Work(QThread):
 
     def __init__(self, parent, tasks, threads_num):
         QThread.__init__(self)
-        self.q = queue.Queue()
+        self.q = queue.LifoQueue()
         for t in tasks:
             self.q.put(t)
         self.parent = parent
@@ -67,16 +64,21 @@ class Work(QThread):
         self.wait()
 
     def run(self):
-        threads = []
+        self.threads = []
         for t in range(self.threads_num):
             t = Worker(self.q)
             t.data.connect(self.parent.get_work_data)
             t.error.connect(self.parent.increase_errors)
             self.parent.btn_stop.clicked.connect(t.stop)
             t.start()
-            threads.append(t)
-        for t in threads:
+            self.threads.append(t)
+        for t in self.threads:
             t.wait()
+
+    def stop(self):
+        for t in self.threads:
+            t.stop()
+
 
 # class Worker(QThread):
 #     send_data = pyqtSignal(bool, str, str, list, str)

@@ -632,28 +632,28 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
     def get_work_data(self, data):
         data.get('setter')(data.get('result'), data.get('args'), data.get('kwargs'))
 
-    def update_list_data(self, id, data, result, get_cursor=lambda r: r.get('next_max_id')):
+    def update_list_data(self, stage, id, data, result, get_cursor=lambda r: r.get('next_max_id')):
         self.model.beginResetModel()
-        self.model._set(self.model.find_id(id), 'following_cursor', get_cursor(result))
-        self.model._append(self.model.find_id(id), 'following', data)
+        self.model._set(self.model.find_id(id), stage + '_cursor', get_cursor(result))
+        self.model._append(self.model.find_id(id), stage, data)
         self.model.endResetModel()
 
     def following_setter(self, result, args, kwargs):
         data = [{k: v[k] for k in ['full_name', 'username', 'profile_pic_url']} for v in
                    {v['pk']: v for v in result.get('users', [])}.values()]
         if data:
-            self.update_list_data(args[0], data, result)
+            self.update_list_data('following', args[0], data, result)
 
     def follower_setter(self, result, args, kwargs):
         data = [{k: v[k] for k in ['full_name', 'username', 'profile_pic_url']} for v in
                    {v['pk']: v for v in result.get('users', [])}.values()]
         if data:
-            self.update_list_data(args[0], data, result)
+            self.update_list_data('follower', args[0], data, result)
 
     def media_setter(self, result, args, kwargs):
         data = [self.prepare_post(p) for p in result.get('items', [])]
         if data:
-            self.update_list_data(args[0], data, result)
+            self.update_list_data('media', args[0], data, result)
 
     def load_user_media(self):
         data = [self.model.data[s] for s in
@@ -679,7 +679,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                 if d.get(stage + '_count', 0) > 0 and d.get(stage + '_cursor', None) != '':
                     tasks.append((stage_fn[stage], [d['id']], {'next_max_id': d.get(stage + '_cursor', None)}, getattr(self, stage + '_setter'), pool.getter))
 
-        self.work = pool.Work(self, tasks, 10)
+        self.work = pool.Work(self, tasks, 3)
         self.work.finished.connect(self.set_progress_ready)
         self.work.start()
 
