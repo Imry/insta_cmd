@@ -37,29 +37,12 @@
         <item>
          <layout class="QHBoxLayout" name="horizontalLayout">
           <item>
-           <widget class="QPushButton" name="btn_start">
-            <property name="enabled">
-             <bool>false</bool>
-            </property>
-            <property name="text">
-             <string>Предпросмотр</string>
-            </property>
-           </widget>
-          </item>
-          <item>
            <widget class="QPushButton" name="btn_prepare">
             <property name="enabled">
              <bool>false</bool>
             </property>
             <property name="text">
              <string>Обработать</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="Line" name="line">
-            <property name="orientation">
-             <enum>Qt::Vertical</enum>
             </property>
            </widget>
           </item>
@@ -266,11 +249,11 @@
     <property name="title">
      <string>Файл</string>
     </property>
-    <addaction name="action_3"/>
-    <addaction name="action_2"/>
+    <addaction name="action_import"/>
+    <addaction name="action_export"/>
     <addaction name="separator"/>
-    <addaction name="action_load"/>
     <addaction name="action_save"/>
+    <addaction name="action_load"/>
     <addaction name="separator"/>
     <addaction name="action_exit"/>
    </widget>
@@ -320,12 +303,12 @@
     <string>Сохранить проект</string>
    </property>
   </action>
-  <action name="action_2">
+  <action name="action_export">
    <property name="text">
     <string>Экспорт пользователей</string>
    </property>
   </action>
-  <action name="action_3">
+  <action name="action_import">
    <property name="text">
     <string>Импорт пользователей</string>
    </property>

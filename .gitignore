@@ -9,3 +9,4 @@ auth.json
 cookie.json
 *.spec
 *.log
+config.json

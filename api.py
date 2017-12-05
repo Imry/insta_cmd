@@ -17,9 +17,9 @@ from instagram_private_api import (
 class Connector(QThread):
     status = pyqtSignal(str)
 
-    def __init__(self, api, cookie_file):
+    def __init__(self, cookie_file):
         QThread.__init__(self)
-        self.api = api
+        self.api = None
         self.cookie_file = cookie_file
         self.username = ''
         self.password = ''
