@@ -21,6 +21,7 @@ import settings
 import ui_filter
 import ui_main
 
+
 COOKIE_FILE = 'cookie.json'
 CONFIG = 'config.json'
 
@@ -82,8 +83,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
 
         self.last_select = ''
 
-        # self.preparser = pool.Parser(worker=self.load_user_info)
-        # self.work = pool.Work()
+        self.work = None
         self.comments_loader = pool.CommentsLoader(worker=self.get_media_comments)
 
         self.errors = 0
@@ -126,8 +126,9 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         self.btn_prepare.clicked.connect(self.load_users)
         self.btn_comments.clicked.connect(self.load_comments)
         self.user_list.clicked.connect(self.show_posts)
+        self.user_list.doubleClicked.connect(self.open_user)
         self.post_list.clicked.connect(self.show_comments)
-        self.user_list.doubleClicked.connect(self.open_url)
+        self.post_list.doubleClicked.connect(self.open_post)
 
         self.btn_filter.toggled.connect(self.filter)
         self.btn_filter_settings.clicked.connect(self.filter_settings)
@@ -162,28 +163,30 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                 csv_name = file[0]
                 with open(csv_name, newline='') as csv_fn:
                     names_reader = csv.reader(csv_fn, delimiter=';')
-                    l = 0
                     data = []
                     for row in names_reader:
                         name = row[0]
                         if name.startswith('@'): name = name[1:]
                         if not is_in_data(name):
                             data.append(name)
-                            l += 1
                             self.model.beginResetModel()
                             self.model.data.append({'username': name})
                             self.model.endResetModel()
 
-                    self.start_work()
-                    tasks = []
-                    for d in data:
-                        tasks.append((self.api.username_info, [d], {}, self.user_setter, lambda result, args, kwargs: (False, {}, {})))
-                    self.work = pool.Work(self, tasks, self.settings_dialog.config.get('load', {}).get('max_threads', 1))
-                    self.work.finished.connect(self.end_work)
-                    self.btn_stop.clicked.connect(self.work.stop)
-                    self.sb_progress.setMaximum(len(data))
-                    self.sb_stage.setText('Предзагрузка пользователей')
-                    self.work.start()
+                    if self.settings_dialog.config.get('load', {}).get('load_new_users', False):
+                        if not self.api:
+                            return
+
+                        self.start_work()
+                        tasks = []
+                        for d in data:
+                            tasks.append((self.api.username_info, [d], {}, self.user_setter, lambda result, args, kwargs: (False, {}, {})))
+                        self.work = pool.Work(self, tasks, self.settings_dialog.config.get('load', {}).get('max_threads', 1))
+                        self.work.finished.connect(self.end_work)
+                        self.btn_stop.clicked.connect(self.work.stop)
+                        self.sb_progress.setMaximum(len(data))
+                        self.sb_stage.setText('Предзагрузка пользователей')
+                        self.work.start()
 
     def export_users(self):
         data = [self.model.data[s] for s in [i.row() for i in self.user_list.selectionModel().selectedRows()] if self.model.data[s].get('id', None) != None]
@@ -196,7 +199,14 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
             except Exception as e:
                 logging.error(e)
 
-    def open_url(self, index):
+    def open_user(self, index):
+        if not index:
+            return
+        row = index.row()
+        user = self.model.data[row]['username']
+        webbrowser.open('www.instagram.com/%s/'%user)
+
+    def open_post(self, index):
         if not index:
             return
         row = index.row()
@@ -247,15 +257,22 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                 # for s in selection:
                 #     self.user_list.selectRow(s)
 
+    def update_list_data(self, stage, id, data, result):
+        self.model.beginResetModel()
+        self.model._set(self.model.find_id(id), stage + '_cursor', result.get('next_max_id', ''))
+        self.model._append(self.model.find_id(id), stage, data)
+        self.model.endResetModel()
+        self.increase_progress(len(data))
+
     def following_setter(self, result, args, kwargs):
         data = [{k: v[k] for k in ['full_name', 'username', 'profile_pic_url']} for v in
-                   {v['pk']: v for v in result.get('users', [])}.values()]
+                {v['pk']: v for v in result.get('users', [])}.values()]
         if data:
             self.update_list_data('following', args[0], data, result)
 
     def follower_setter(self, result, args, kwargs):
         data = [{k: v[k] for k in ['full_name', 'username', 'profile_pic_url']} for v in
-                   {v['pk']: v for v in result.get('users', [])}.values()]
+                {v['pk']: v for v in result.get('users', [])}.values()]
         if data:
             self.update_list_data('follower', args[0], data, result)
 
@@ -264,24 +281,13 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         if data:
             self.update_list_data('media', args[0], data, result)
 
-    def comment_setter(self):
-        None
-
-    def update_list_data(self, stage, id, data, result, get_cursor=lambda r: r.get('next_max_id', '')):
-        self.model.beginResetModel()
-        self.model._set(self.model.find_id(id), stage + '_cursor', get_cursor(result))
-        self.model._append(self.model.find_id(id), stage, data)
-        self.model.endResetModel()
-        self.increase_progress(len(data))
 
     def load_users(self):
         if not self.api:
             return
-
         data = [self.model.data[s] for s in
-            [i.row() for i in self.user_list.selectionModel().selectedRows()]
-            if self.model.data[s].get('id', None) != None]
-
+                [i.row() for i in self.user_list.selectionModel().selectedRows()]
+                if self.model.data[s].get('id', None) is not None]
         if len(data) == 0:
             return
 
@@ -308,62 +314,66 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         self.sb_stage.setText('Парсинг пользователей')
         self.work.start()
 
-    def get_media_comments(self, media_id):
-        if not self.api:
-            return False, [], None
+    def comment_setter(self, result, args, kwargs):
         def prepare_comment(comment):
             comment['username'] = comment['user']['username']
             return comment
-        try:
-            items = []
-            items_u = set()
-            for results, cursor in pagination.page(self.api.media_comments, args={'media_id': media_id}, wait=0):
-                if results.get('comments'):
-                    items.extend([prepare_comment(c) for c in results['comments']])
-                items_u = sorted([v for v in {v['pk']: v for v in items}.values()], key=lambda x: x['created_at_utc'], reverse=False)
-                yield True, items_u, cursor
-        except Exception as e:
-            logging.error(e)
-            return False, [], None
-
-    def comments_progress(self, ok, username, media_id, result, cursor):
-        if ok:
-            self.sb_progress.setValue(len(result))
+        data = [prepare_comment(c) for c in result.get('comments', [])]
+        ttt = [v for v in {v['pk']: v for v in data}.values()]
+        cursor = result.get('next_max_id', '')
+        if data:
             self.comments.beginResetModel()
-            for d in self.model.data:
-                if d['username'] == username:
-                    for p in d['media']:
-                        if str(p['pk']) == media_id:
-                            p['comment_simple'] = result
-                            p['comment_cursor'] = cursor
-                            break
+            # for d in self.model.data:
+            #     if d['username'] == username:
+            #         for p in d['media']:
+            #             if str(p['pk']) == media_id:
+            #                 p['comment_simple'] = result
+            #                 p['comment_cursor'] = cursor
+            #                 break
             self.comments.endResetModel()
-        else:
-            self.increase_errors()
 
     def load_comments(self):
+        if not self.api:
+            return
         data = [self.posts.data[s] for s in [i.row() for i in self.post_list.selectionModel().selectedRows()]]
         if len(data) == 0:
             return
-
         self.start_work()
 
-        self.errors = 0
-        self.show_errors()
-        self.sb_progress.setValue(0)
+        tasks = []
+        max = 0
+        for d in data:
+            # fn, args, kwargs, setter, getter = self.tasks.get()
+            if d.get('comments_count', 0) > 0 and d.get(stage + 'comments_cursor', None) != '':
+                tasks.append((stage_fn[stage], [d['id']], {'max_id': d.get(stage + '_cursor', '')}, getattr(self, stage + '_setter'), pool.getter))
+                max += d.get(stage + '_count', 0)
 
-        self.sb_stage.setText('Загрука комментариев')
-        self.btn_stop.clicked.connect(self.comments_loader.stop)
-        self.comments_loader.task.connect(self.sb_items.setText)
-        self.comments_loader.set_max.connect(self.sb_progress.setMaximum)
-        self.comments_loader.progress.connect(self.sb_progress.setValue)
-        self.comments_loader.error.connect(self.increase_errors)
-        self.comments_loader.send_data.connect(self.comments_progress)
-        self.comments_loader.finished.connect(self.end_work)
+        self.work = pool.Work(self, tasks, self.settings_dialog.config.get('load', {}).get('max_threads', 1))
+        self.work.finished.connect(self.end_work)
+        self.btn_stop.clicked.connect(self.work.stop)
+        self.sb_progress.setMaximum(max)
+        self.sb_stage.setText('Загруза коментариев')
+        self.work.start()
 
-        self.comments_loader.set_data(self.last_select, data)
 
-        self.comments_loader.start()
+    # def get_media_comments(self, media_id):
+    #     if not self.api:
+    #         return False, [], None
+    #     def prepare_comment(comment):
+    #         comment['username'] = comment['user']['username']
+    #         return comment
+    #     try:
+    #         items = []
+    #         items_u = set()
+    #         for results, cursor in pagination.page(self.api.media_comments, args={'media_id': media_id}, wait=0):
+    #             if results.get('comments'):
+    #                 items.extend([prepare_comment(c) for c in results['comments']])
+    #             items_u = sorted([v for v in {v['pk']: v for v in items}.values()], key=lambda x: x['created_at_utc'], reverse=False)
+    #             yield True, items_u, cursor
+    #     except Exception as e:
+    #         logging.error(e)
+    #         return False, [], None
+
 
     def start_work(self):
         self.errors = 0
@@ -387,7 +397,6 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
 
     def set_status(self, status):
         self.sb_connection.setText(status)
-
 
     def filter_settings(self):
         info_gm = self.filter_dialog.frameGeometry()

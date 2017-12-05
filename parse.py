@@ -3,19 +3,21 @@
 
 import datetime
 
+
 def user(user):
     return {'id': user.get('pk', 0),
-     'img': user.get('hd_profile_pic_url_info', {}).get('url', ''),
-     'full_name': user.get('full_name', ''),
-     'following_count': user.get('following_count', ''),
-     'follower_count': user.get('follower_count', ''),
-     'external_url': user.get('external_url', ''),
-     'biography': user.get('biography', ''),
-     'media_count': user.get('media_count', '')
-     }
+            'img': user.get('hd_profile_pic_url_info', {}).get('url', ''),
+            'full_name': user.get('full_name', ''),
+            'following_count': user.get('following_count', ''),
+            'follower_count': user.get('follower_count', ''),
+            'external_url': user.get('external_url', ''),
+            'biography': user.get('biography', ''),
+            'media_count': user.get('media_count', '')
+            }
+
 
 def post(post):
-    if 'location' in post and post['location'] != None:
+    if 'location' in post and post['location'] is not None:
         loc = []
         location = post['location']
         for l in ['name', 'address', 'sity']:
@@ -51,7 +53,7 @@ def post(post):
     else:
         post['media_simple'] = ''
 
-    if 'caption' in post and post['caption'] != None:
+    if 'caption' in post and post['caption'] is not None:
         post['caption_simple'] = post['caption']['text']
     else:
         post['caption_simple'] = ''

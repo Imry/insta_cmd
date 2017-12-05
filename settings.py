@@ -22,6 +22,7 @@ default_config = {
     }
 }
 
+
 class Settings(QtWidgets.QDialog, ui_settings.Ui_Dialog):
     def __init__(self, fn):
         super(self.__class__, self).__init__()

@@ -14,6 +14,7 @@ from instagram_private_api import (
     ClientCookieExpiredError, ClientLoginRequiredError,
     __version__ as client_version)
 
+
 class Connector(QThread):
     status = pyqtSignal(str)
 
@@ -35,6 +36,7 @@ class Connector(QThread):
             self.status.emit('Не подключено')
         else:
             self.status.emit('Подключено')
+
 
 def connect(username, password, cookie_file):
     def to_json(python_object):

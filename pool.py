@@ -4,6 +4,7 @@
 
 import logging
 import queue
+import traceback
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -15,6 +16,7 @@ def getter(result, args, kwargs, cursor_key='max_id', get_cursor=lambda r: r.get
         return True, args, kwargs
     else:
         return False, args, kwargs
+
 
 class Worker(QThread):
     data = pyqtSignal(object)
@@ -44,11 +46,13 @@ class Worker(QThread):
                 return
             except Exception as e:
                 logging.error(e)
+                logging.error(traceback.format_exc())
                 self.error.emit()
                 # return
 
     def stop(self):
         self.need_stop = True
+
 
 class Work(QThread):
     def __init__(self, parent, tasks, threads_num):
@@ -76,47 +80,3 @@ class Work(QThread):
     def stop(self):
         for t in self.threads:
             t.stop()
-
-class CommentsLoader(QThread):
-    task = pyqtSignal(str)
-    set_max = pyqtSignal(int)
-    progress = pyqtSignal(int)
-    send_data = pyqtSignal(bool, str, str, list, str)
-    error = pyqtSignal()
-
-    def __init__(self, worker):
-        QThread.__init__(self)
-        self.data = []
-        self.is_running = False
-        self.worker = worker
-        self.username = None
-
-    def __del__(self):
-        self.wait()
-
-    def run(self):
-        if self.username is None:
-            return
-        if len(self.data) == 0:
-            return
-        self.is_running = True
-        for idx, d in enumerate(self.data):
-            self.task.emit('%s / %s'%(idx + 1, len(self.data)))
-            self.set_max.emit(d['comment_count'])
-            self.progress.emit(0)
-
-            for ok, result, cursor in self.worker(d['pk']):
-                if not self.is_running:
-                    return
-                self.progress.emit(len(result))
-                self.send_data.emit(ok, self.username, str(d['pk']), result, str(cursor) if cursor != None else cursor)
-                if not ok:
-                    self.error.emit()
-                    break
-
-    def stop(self):
-        self.is_running = False
-
-    def set_data(self, username, data):
-        self.username = username
-        self.data = data

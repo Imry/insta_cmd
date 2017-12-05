@@ -13,6 +13,7 @@ class Headers():
     def find_header(self, idx):
         return self.headers[idx][0]
 
+
 class DataModel(QtCore.QAbstractTableModel, Headers):
     def __init__(self, parent=None, *args):
         QtCore.QAbstractTableModel.__init__(self, parent, *args)
@@ -108,6 +109,7 @@ class DataModel(QtCore.QAbstractTableModel, Headers):
                 else:
                     d[key].extend(value)
                 break
+
 
 class PostModel(QtCore.QAbstractTableModel, Headers):
     def __init__(self, parent=None, *args):
