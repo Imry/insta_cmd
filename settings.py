@@ -18,7 +18,8 @@ default_config = {
     },
     "load": {
         "load_new_users": True,
-        "max_threads": 5
+        "max_threads": 5,
+        "thread_delay": 0.1
     }
 }
 

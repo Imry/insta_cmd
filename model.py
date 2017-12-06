@@ -6,7 +6,7 @@ from PyQt5.Qt import Qt
 from PyQt5.QtWidgets import QHeaderView
 
 
-class Headers():
+class Headers:
     def __init__(self):
         self.headers = []
 
@@ -74,25 +74,25 @@ class DataModel(QtCore.QAbstractTableModel, Headers):
         self.endResetModel()
         # self.layoutChanged.emit()
 
-    def find_id(self, id):
+    def find_id(self, user_id):
         for d in self.data:
-            if d['id'] == id:
+            if d['id'] == user_id:
                 return d['username']
 
-    def _get(self, username):
+    def get_(self, username):
         for d in self.data:
             if d['username'] == username:
                 return d
         return None
 
-    def _set(self, username, key, value):
+    def set_(self, username, key, value):
         # if username[0] != '@': username = '@' + username
         for d in self.data:
             if d['username'] == username:
                 d[key] = value
                 break
 
-    def _set2(self, username, key_value):
+    def set_dict(self, username, key_value):
         # if username[0] != '@': username = '@' + username
         for d in self.data:
             if d['username'] == username:
@@ -100,7 +100,7 @@ class DataModel(QtCore.QAbstractTableModel, Headers):
                     d[k] = v
                 return
 
-    def _append(self, username, key, value):
+    def append_(self, username, key, value):
         # if username[0] != '@': username = '@' + username
         for d in self.data:
             if d['username'] == username:
@@ -164,7 +164,7 @@ class PostModel(QtCore.QAbstractTableModel, Headers):
         self.endResetModel()
         # self.layoutChanged.emit()
 
-    def _set_data(self, data):
+    def set_(self, data):
         self.beginResetModel()
         self.data = data
         self.endResetModel()
@@ -200,7 +200,7 @@ class UsersModel(QtCore.QAbstractTableModel, Headers):
         row = index.row()
         return self.data[row].get(col, None)
 
-    def _set_data(self, data):
+    def set_(self, data):
         self.beginResetModel()
         self.data = data
         self.endResetModel()
@@ -235,7 +235,7 @@ class CommentsModel(QtCore.QAbstractTableModel, Headers):
         row = index.row()
         return self.data[row].get(col, None)
 
-    def _set_data(self, data):
+    def set_(self, data):
         self.beginResetModel()
         self.data = data
         self.endResetModel()

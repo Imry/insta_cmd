@@ -4,18 +4,19 @@
 
 import logging
 import queue
+import time
 import traceback
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
 
-def getter(result, args, kwargs, cursor_key='max_id', get_cursor=lambda r: r.get('next_max_id')):
-    cursor = get_cursor(result)
+def list_getter(result, fn, args, kwargs, setter, getter):
+    cursor = result.get('next_max_id')
     if cursor:
-        kwargs[cursor_key] = cursor
-        return True, args, kwargs
+        kwargs['max_id'] = cursor
+        return [(fn, args, kwargs, setter, getter)]
     else:
-        return False, args, kwargs
+        return []
 
 
 class Worker(QThread):
@@ -27,21 +28,25 @@ class Worker(QThread):
         self.tasks = tasks
         self.daemon = True
         self.need_stop = False
-
+        self.dalay = 0
     # def __del__(self):
     #     self.wait()
 
     def run(self):
         while True:
             try:
+                if self.dalay:
+                    time.sleep(self.dalay)
                 fn, args, kwargs, setter, getter = self.tasks.get(block=False)
                 if self.need_stop:
                     return
                 result = fn(*args, **kwargs)
                 self.data.emit({'result': result, 'setter': setter, 'args': args, 'kwargs': kwargs})
-                ok, args, kwargs = getter(result, args.copy(), kwargs.copy())
-                if ok:
-                    self.tasks.put((fn, args, kwargs, setter, getter))
+                task = getter(result, fn, args.copy(), kwargs.copy(), setter, getter)
+                if task:
+                    for t in task:
+                        fn, args, kwargs, setter, getter = t
+                        self.tasks.put((fn, args, kwargs, setter, getter))
             except queue.Empty as e:
                 return
             except Exception as e:
@@ -62,13 +67,13 @@ class Work(QThread):
             self.q.put(t)
         self.parent = parent
         self.threads_num = threads_num
+        self.threads = []
 
     # def __del__(self):
     #     self.wait()
 
     def run(self):
-        self.threads = []
-        for t in range(self.threads_num):
+        for _ in range(self.threads_num):
             t = Worker(self.q)
             t.data.connect(self.parent.get_work_data)
             t.error.connect(self.parent.increase_errors)
