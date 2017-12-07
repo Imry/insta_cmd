@@ -68,10 +68,11 @@ class DataModel(QtCore.QAbstractTableModel, Headers):
 
     def sort(self, col, order):
         # self.layoutAboutToBeChanged.emit()
-        self.beginResetModel()
+        # self.beginResetModel()
         hdr = self.headers[col][0]
         self.data = sorted(self.data, key=lambda x: x.get(hdr, 0), reverse=order==Qt.DescendingOrder)
-        self.endResetModel()
+        self.dataChanged()
+        # self.endResetModel()
         # self.layoutChanged.emit()
 
     def find_id(self, id):
@@ -158,10 +159,11 @@ class PostModel(QtCore.QAbstractTableModel, Headers):
 
     def sort(self, col, order):
         # self.layoutAboutToBeChanged.emit()
-        self.beginResetModel()
+        # self.beginResetModel()
         hdr = self.headers[col][0]
         self.data = sorted(self.data, key=lambda x: x.get(hdr, 0), reverse=order==Qt.DescendingOrder)
-        self.endResetModel()
+        self.dataChanged()
+        # self.endResetModel()
         # self.layoutChanged.emit()
 
     def _set_data(self, data):
@@ -201,9 +203,10 @@ class UsersModel(QtCore.QAbstractTableModel, Headers):
         return self.data[row].get(col, None)
 
     def _set_data(self, data):
-        self.beginResetModel()
+        # self.beginResetModel()
         self.data = data
-        self.endResetModel()
+        self.dataChanged()
+        # self.endResetModel()
 
 class CommentsModel(QtCore.QAbstractTableModel, Headers):
     def __init__(self, parent=None, *args):
@@ -236,6 +239,7 @@ class CommentsModel(QtCore.QAbstractTableModel, Headers):
         return self.data[row].get(col, None)
 
     def _set_data(self, data):
-        self.beginResetModel()
+        # self.beginResetModel()
         self.data = data
-        self.endResetModel()
+        self.dataChanged()
+        # self.endResetModel()

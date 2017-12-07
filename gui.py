@@ -169,9 +169,10 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                         if name.startswith('@'): name = name[1:]
                         if not is_in_data(name):
                             data.append(name)
-                            self.model.beginResetModel()
+                            # self.model.beginResetModel()
                             self.model.data.append({'username': name})
-                            self.model.endResetModel()
+                            self.model.dataChanged()
+                            # self.model.endResetModel()
 
                     if self.settings_dialog.config.get('load', {}).get('load_new_users', False):
                         if not self.api:
@@ -250,18 +251,23 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
             user = result.get('user', {})
             if user != {}:
                 # selection = [i.row() for i in self.user_list.selectionModel().selectedRows()]
-                self.model.beginResetModel()
+                # self.model.beginResetModel()
                 self.model._set2(args[0], parse.user(user))
-                self.model.endResetModel()
+                self.model.dataChanged()
+                # self.model.endResetModel()
                 self.increase_progress(1)
                 # for s in selection:
                 #     self.user_list.selectRow(s)
 
     def update_list_data(self, stage, id, data, result):
-        self.model.beginResetModel()
+        # self.model.beginResetModel()
         self.model._set(self.model.find_id(id), stage + '_cursor', result.get('next_max_id', ''))
         self.model._append(self.model.find_id(id), stage, data)
-        self.model.endResetModel()
+        self.model.dataChanged()
+        self.posts.dataChanged()
+        self.follower.dataChanged()
+        self.following.dataChanged()
+        # self.model.endResetModel()
         self.increase_progress(len(data))
 
     def following_setter(self, result, args, kwargs):
