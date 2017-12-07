@@ -151,11 +151,6 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                     self.model.endResetModel()
 
     def import_users(self):
-        def is_in_data(name):
-            for d in self.model.data:
-                if d.get('username', '') == name:
-                    return True
-            return False
         file = QtWidgets.QFileDialog.getOpenFileName(self, caption='Выберете csv файл', filter='text (*.csv)')
         if file:
             if file[0] != '':
@@ -166,14 +161,16 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                     for row in names_reader:
                         name = row[0]
                         if name.startswith('@'): name = name[1:]
-                        if not is_in_data(name):
+                        d = self.model.find_('username', name)
+                        if not d or not d.get('id'):
                             data.append(name)
+                        if not d:
                             self.model.beginResetModel()
                             self.model.data.append({'username': name})
                             self.model.endResetModel()
 
                     if self.settings_dialog.config.get('load', {}).get('load_new_users', False):
-                        if not self.api:
+                        if not self.api or not data:
                             return
 
                         self.start_work()
@@ -184,7 +181,12 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                                           {},
                                           self.user_setter,
                                           lambda *unused: []))
-                        self.work = pool.Work(self, tasks, self.settings_dialog.config.get('load', {}).get('max_threads', 1))
+                        self.work = pool.Work(
+                            self,
+                            tasks,
+                            self.settings_dialog.config.get('load', {}).get('max_threads', 1),
+                            self.settings_dialog.config.get('load', {}).get('thread_delay', 0)
+                        )
                         self.work.finished.connect(self.end_work)
                         self.btn_stop.clicked.connect(self.work.stop)
                         self.sb_progress.setMaximum(len(data))
@@ -243,7 +245,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
     def increase_progress(self, value):
         self.sb_progress.setValue(self.sb_progress.value() + value)
 
-    def get_work_data(self, data):
+    def get_work_data(sel, data):
         data.get('setter')(data.get('result'), data.get('args'), data.get('kwargs'))
 
     def user_setter(self, result, args, kwargs):
@@ -260,10 +262,10 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                 # for s in selection:
                 #     self.user_list.selectRow(s)
 
-    def update_list_data(self, stage, id, data, result):
+    def update_list_data(self, stage, user_id, data, result):
         self.model.beginResetModel()
-        self.model.set_(self.model.find_id(id), stage + '_cursor', result.get('next_max_id', ''))
-        self.model.append_(self.model.find_id(id), stage, data)
+        self.model.set_(self.model.find_('id', user_id), stage + '_cursor', result.get('next_max_id', ''))
+        self.model.append_(self.model.find_('id', user_id), stage, data)
         self.model.endResetModel()
         self.increase_progress(len(data))
 
@@ -289,8 +291,11 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
             return
         data = [self.model.data[s] for s in
                 [i.row() for i in self.user_list.selectionModel().selectedRows()]
-                if self.model.data[s].get('id', None) is not None]
-        if len(data) == 0:
+                if self.model.data[s].get('id') is not None]
+        empty_data = [self.model.data[s] for s in
+                [i.row() for i in self.user_list.selectionModel().selectedRows()]
+                if self.model.data[s].get('id') is None]
+        if not data and not empty_data:
             return
 
         self.start_work()
@@ -302,18 +307,43 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
             'follower': self.api.user_followers
         }
         max = 0
-        for d in data:
-            # fn, args, kwargs, setter, getter = self.tasks.get()
-            for stage in ['media', 'following', 'follower']:
-                if d.get(stage + '_count', 0) > 0 and d.get(stage + '_cursor', None) != '':
-                    tasks.append((stage_fn[stage],
-                                  [d['id']],
-                                  {'max_id': d.get(stage + '_cursor', '')},
-                                  getattr(self, stage + '_setter'),
-                                  pool.list_getter))
-                    max += d.get(stage + '_count', 0)
 
-        self.work = pool.Work(self, tasks, self.settings_dialog.config.get('load', {}).get('max_threads', 1))
+        def user_continue_getter(result, *unused):
+            cursor = result.get('user', {}).get('pk')
+            if cursor:
+                return [
+                    (v,
+                     [cursor],
+                     {},
+                     getattr(self, k + '_setter'),
+                     pool.list_getter)
+                    for k, v in stage_fn.items()
+                ]
+            else:
+                return []
+
+        for d in empty_data:
+            tasks.append((self.api.username_info,
+                          [d['username']],
+                          {},
+                          self.user_setter,
+                          user_continue_getter))
+        max += len(empty_data)
+        for d in data:
+            for k, v in stage_fn.items():
+                if d.get(k + '_count', 0) > 0 and d.get(k + '_cursor', None) != '':
+                    tasks.append((v,
+                                  [d['id']],
+                                  {'max_id': d.get(k + '_cursor', '')},
+                                  getattr(self, k + '_setter'),
+                                  pool.list_getter))
+                    max += d.get(k + '_count', 0)
+        self.work = pool.Work(
+            self,
+            tasks,
+            self.settings_dialog.config.get('load', {}).get('max_threads', 1),
+            self.settings_dialog.config.get('load', {}).get('thread_delay', 0)
+        )
         self.work.finished.connect(self.end_work)
         self.btn_stop.clicked.connect(self.work.stop)
         self.sb_progress.setMaximum(max)

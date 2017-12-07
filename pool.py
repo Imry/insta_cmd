@@ -23,20 +23,21 @@ class Worker(QThread):
     data = pyqtSignal(object)
     error = pyqtSignal()
 
-    def __init__(self, tasks):
+    def __init__(self, tasks, delay=0):
         QThread.__init__(self)
         self.tasks = tasks
         self.daemon = True
         self.need_stop = False
-        self.dalay = 0
+        self.delay = delay
+
     # def __del__(self):
     #     self.wait()
 
     def run(self):
         while True:
             try:
-                if self.dalay:
-                    time.sleep(self.dalay)
+                if self.delay:
+                    time.sleep(self.delay)
                 fn, args, kwargs, setter, getter = self.tasks.get(block=False)
                 if self.need_stop:
                     return
@@ -45,9 +46,10 @@ class Worker(QThread):
                 task = getter(result, fn, args.copy(), kwargs.copy(), setter, getter)
                 if task:
                     for t in task:
-                        fn, args, kwargs, setter, getter = t
-                        self.tasks.put((fn, args, kwargs, setter, getter))
-            except queue.Empty as e:
+                        self.tasks.put(t)
+                        # fn, args, kwargs, setter, getter = t
+                        # self.tasks.put((fn, args, kwargs, setter, getter))
+            except queue.Empty:
                 return
             except Exception as e:
                 logging.error(e)
@@ -60,7 +62,7 @@ class Worker(QThread):
 
 
 class Work(QThread):
-    def __init__(self, parent, tasks, threads_num):
+    def __init__(self, parent, tasks, threads_num, thread_delay):
         QThread.__init__(self)
         self.q = queue.Queue()
         for t in tasks:
@@ -68,13 +70,14 @@ class Work(QThread):
         self.parent = parent
         self.threads_num = threads_num
         self.threads = []
+        self.thread_delay = thread_delay
 
     # def __del__(self):
     #     self.wait()
 
     def run(self):
         for _ in range(self.threads_num):
-            t = Worker(self.q)
+            t = Worker(self.q, self.thread_delay)
             t.data.connect(self.parent.get_work_data)
             t.error.connect(self.parent.increase_errors)
             t.start()

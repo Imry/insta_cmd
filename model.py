@@ -70,14 +70,15 @@ class DataModel(QtCore.QAbstractTableModel, Headers):
         # self.layoutAboutToBeChanged.emit()
         self.beginResetModel()
         hdr = self.headers[col][0]
-        self.data = sorted(self.data, key=lambda x: x.get(hdr, 0), reverse=order==Qt.DescendingOrder)
+        self.data = sorted(self.data, key=lambda x: x.get(hdr, 0), reverse=order == Qt.DescendingOrder)
         self.endResetModel()
         # self.layoutChanged.emit()
 
-    def find_id(self, user_id):
+    def find_(self, key, value):
         for d in self.data:
-            if d['id'] == user_id:
+            if d.get(key) == value:
                 return d['username']
+        return None
 
     def get_(self, username):
         for d in self.data:
@@ -160,7 +161,7 @@ class PostModel(QtCore.QAbstractTableModel, Headers):
         # self.layoutAboutToBeChanged.emit()
         self.beginResetModel()
         hdr = self.headers[col][0]
-        self.data = sorted(self.data, key=lambda x: x.get(hdr, 0), reverse=order==Qt.DescendingOrder)
+        self.data = sorted(self.data, key=lambda x: x.get(hdr, 0), reverse=order == Qt.DescendingOrder)
         self.endResetModel()
         # self.layoutChanged.emit()
 
@@ -173,6 +174,7 @@ class UsersModel(QtCore.QAbstractTableModel, Headers):
     def __init__(self, parent=None, *args):
         QtCore.QAbstractTableModel.__init__(self, parent, *args)
         self.data = []
+        # self.data = None
         self.headers = [
             ('username', 'Ник', QHeaderView.ResizeToContents),
             ('full_name', 'Имя', QHeaderView.ResizeToContents),
