@@ -71,9 +71,9 @@ class DataModel(QtCore.QAbstractTableModel, Headers):
         # self.beginResetModel()
         hdr = self.headers[col][0]
         self.data = sorted(self.data, key=lambda x: x.get(hdr, 0), reverse=order==Qt.DescendingOrder)
-        self.dataChanged()
+        # self.dataChanged()
         # self.endResetModel()
-        # self.layoutChanged.emit()
+        self.layoutChanged.emit()
 
     def find_(self, key, value):
         for d in self.data:
@@ -151,7 +151,7 @@ class PostModel(QtCore.QAbstractTableModel, Headers):
         col = self.find_header(index.column())
         row = index.row()
         if col == 'comment_status':
-            if len(self.data[row]['comment_simple']) == self.data[row]['comment_count']:
+            if self.data[row].get('comment_cursor', None) == '':
                 return 'Комментариев: %s'%(len(self.data[row]['comment_simple']))
             else:
                 return 'Не обработан'
@@ -163,14 +163,16 @@ class PostModel(QtCore.QAbstractTableModel, Headers):
         # self.beginResetModel()
         hdr = self.headers[col][0]
         self.data = sorted(self.data, key=lambda x: x.get(hdr, 0), reverse=order==Qt.DescendingOrder)
-        self.dataChanged()
+        # self.dataChanged()
+        self.layoutChanged.emit()
         # self.endResetModel()
         # self.layoutChanged.emit()
 
     def set_(self, data):
         # self.beginResetModel()
         self.data = data
-        self.dataChanged()
+        self.layoutChanged.emit()
+        # self.dataChanged()
         # self.endResetModel()
 
 class UsersModel(QtCore.QAbstractTableModel, Headers):
@@ -208,7 +210,8 @@ class UsersModel(QtCore.QAbstractTableModel, Headers):
     def set_(self, data):
         # self.beginResetModel()
         self.data = data
-        self.dataChanged()
+        self.layoutChanged.emit()
+        # self.dataChanged()
         # self.endResetModel()
 
 
@@ -245,5 +248,6 @@ class CommentsModel(QtCore.QAbstractTableModel, Headers):
     def set_(self, data):
         # self.beginResetModel()
         self.data = data
-        self.dataChanged()
+        self.layoutChanged.emit()
+        # self.dataChanged()
         # self.endResetModel()

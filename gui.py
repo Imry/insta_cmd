@@ -146,9 +146,10 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
             if file[0] != '':
                 p_name = file[0]
                 with open(p_name, 'rb') as p_f:
-                    self.model.beginResetModel()
+                    # self.model.beginResetModel()
                     self.model.data = pickle.load(p_f)
-                    self.model.endResetModel()
+                    self.model.layoutChanged.emit()
+                    # self.model.endResetModel()
 
     def import_users(self):
         file = QtWidgets.QFileDialog.getOpenFileName(self, caption='Выберете csv файл', filter='text (*.csv)')
@@ -166,7 +167,8 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                             data.append(name)
                             # self.model.beginResetModel()
                             self.model.data.append({'username': name})
-                            self.model.dataChanged()
+                            self.model.layoutChanged.emit()
+                            # self.model.dataChanged.emit()
                             # self.model.endResetModel()
 
                     if self.settings_dialog.config.get('load', {}).get('load_new_users', False):
@@ -215,8 +217,8 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         if not index:
             return
         row = index.row()
-        user = self.model.data[row]['username']
-        webbrowser.open('www.instagram.com/%s/'%user)
+        url = self.model.data[self.last_select_idx]['media'][row]['url']
+        webbrowser.open(url)
 
     def show_posts(self, index):
         if not index:
@@ -224,6 +226,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         row = index.row()
         user = self.model.data[row]
         self.last_select = user['username']
+        self.last_select_idx = row
         self.posts.set_(user.get('media', []))
         self.following.set_(user.get('following', []))
         self.follower.set_(user.get('follower', []))
@@ -257,21 +260,28 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                 # selection = [i.row() for i in self.user_list.selectionModel().selectedRows()]
                 # self.model.beginResetModel()
                 self.model.set_dict(args[0], parse.user(user))
-                self.model.dataChanged()
+                self.model.layoutChanged.emit()
+                # self.model.dataChanged.emit()
                 # self.model.endResetModel()
                 self.increase_progress(1)
                 # for s in selection:
                 #     self.user_list.selectRow(s)
 
     def update_list_data(self, stage, id, data, result):
-        # self.model.beginResetModel()
-        self.model.set_(self.model.find_id(id), stage + '_cursor', result.get('next_max_id', ''))
-        self.model.append_(self.model.find_id(id), stage, data)
-        self.model.dataChanged()
-        self.posts.dataChanged()
-        self.follower.dataChanged()
-        self.following.dataChanged()
-        # self.model.endResetModel()
+        self.model.beginResetModel()
+        self.model.set_(self.model.find_('id', id), stage + '_cursor', result.get('next_max_id', ''))
+        self.model.append_(self.model.find_('id', id), stage, data)
+
+        self.model.layoutChanged.emit()
+        self.posts.layoutChanged.emit()
+        self.follower.layoutChanged.emit()
+        self.following.layoutChanged.emit()
+
+        # self.model.dataChanged.emit()
+        # self.posts.dataChanged.emit()
+        # self.follower.dataChanged.emit()
+        # self.following.dataChanged.emit()
+        self.model.endResetModel()
         self.increase_progress(len(data))
 
     def following_setter(self, result, args, kwargs):
@@ -362,7 +372,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         data = [prepare_comment(c) for c in result.get('comments', [])]
         cursor = result.get('next_max_id', '')
         if data:
-            self.comments.beginResetModel()
+            # self.comments.beginResetModel()
             for d in self.model.data:
                 if d['username'] == kwargs['user_id']:
                     for p in d['media']:
@@ -370,7 +380,8 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                             p['comment_simple'] = data
                             p['comment_cursor'] = cursor
                             break
-            self.comments.endResetModel()
+            self.comments.layoutChanged.emit()
+            # self.comments.endResetModel()
 
     def load_comments(self):
         if not self.api:
@@ -392,7 +403,12 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                               pool.list_getter))
                 max += d.get('comment_count', 0)
 
-        self.work = pool.Work(self, tasks, self.settings_dialog.config.get('load', {}).get('max_threads', 1))
+        self.work = pool.Work(
+            self,
+            tasks,
+            self.settings_dialog.config.get('load', {}).get('max_threads', 1),
+            self.settings_dialog.config.get('load', {}).get('thread_delay', 0)
+        )
         self.work.finished.connect(self.end_work)
         self.btn_stop.clicked.connect(self.work.stop)
         self.sb_progress.setMaximum(max)
