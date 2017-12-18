@@ -8,6 +8,7 @@ import sys
 import traceback
 
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import QCoreApplication
 
 from gui import Main
 
@@ -36,6 +37,11 @@ class App(QApplication):
 
 
 if __name__ == '__main__':
+    paths = QCoreApplication.libraryPaths()
+    paths.append('.')
+    paths.append('platforms')
+    QCoreApplication.setLibraryPaths(paths)
+
     try:
         app = App(sys.argv)
         sys.exit(app.exec_())

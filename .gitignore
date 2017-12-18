@@ -10,3 +10,6 @@ cookie.json
 *.spec
 *.log
 config.json
+*.csv
+*.xls
+*.project

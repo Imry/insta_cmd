@@ -5,6 +5,7 @@ import csv
 import logging
 import os
 import pickle
+import traceback
 import webbrowser
 
 from PyQt5 import QtWidgets, QtCore
@@ -19,7 +20,6 @@ import pool
 import settings
 import ui_filter
 import ui_main
-
 
 COOKIE_FILE = 'cookie.json'
 CONFIG = 'config.json'
@@ -196,15 +196,21 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                         self.work.start()
 
     def export_users(self):
-        data = [self.model.data[s] for s in [i.row() for i in self.user_list.selectionModel().selectedRows()] if self.model.data[s].get('id', None) != None]
+        data = [u for u in self.model.data if u.get('id', None) is not None]
         if len(data) == 0:
             return
-        file = str(QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory"))
-        for d in data:
-            try:
-                excel.save_user(d, os.path.join(file, d['username'] + '.xls'))
-            except Exception as e:
-                logging.error(e)
+        try:
+            file = QtWidgets.QFileDialog.getSaveFileName(self,
+                                                         caption='Выберите файл для экспорта или введите название нового',
+                                                         filter='Project file (*.xls)')
+            if file:
+                if file[0] != '':
+                    p_name = file[0]
+            # file = str(QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory"))
+                    excel.save(data, p_name)
+        except Exception as e:
+            logging.error(e)
+            logging.error(traceback.format_exc())
 
     def open_user(self, index):
         if not index:
@@ -258,11 +264,11 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
             user = result.get('user', {})
             if user != {}:
                 # selection = [i.row() for i in self.user_list.selectionModel().selectedRows()]
-                # self.model.beginResetModel()
+                self.model.beginResetModel()
                 self.model.set_dict(args[0], parse.user(user))
                 self.model.layoutChanged.emit()
                 # self.model.dataChanged.emit()
-                # self.model.endResetModel()
+                self.model.endResetModel()
                 self.increase_progress(1)
                 # for s in selection:
                 #     self.user_list.selectRow(s)
@@ -372,7 +378,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         data = [prepare_comment(c) for c in result.get('comments', [])]
         cursor = result.get('next_max_id', '')
         if data:
-            # self.comments.beginResetModel()
+            self.model.beginResetModel()
             for d in self.model.data:
                 if d['username'] == kwargs['user_id']:
                     for p in d['media']:
@@ -381,7 +387,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                             p['comment_cursor'] = cursor
                             break
             self.comments.layoutChanged.emit()
-            # self.comments.endResetModel()
+            self.model.endResetModel()
 
     def load_comments(self):
         if not self.api:
