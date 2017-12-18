@@ -152,7 +152,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
                     # self.model.endResetModel()
 
     def import_users(self):
-        file = QtWidgets.QFileDialog.getOpenFileName(self, caption='Выберете csv файл', filter='text (*.csv)')
+        file = QtWidgets.QFileDialog.getOpenFileName(self, caption='Выберете csv файл', filter='CSV (*.csv)')
         if file:
             if file[0] != '':
                 csv_name = file[0]
@@ -202,7 +202,7 @@ class Main(QtWidgets.QMainWindow, ui_main.Ui_MainWindow):
         try:
             file = QtWidgets.QFileDialog.getSaveFileName(self,
                                                          caption='Выберите файл для экспорта или введите название нового',
-                                                         filter='Project file (*.xls)')
+                                                         filter='Excel (*.xls)')
             if file:
                 if file[0] != '':
                     p_name = file[0]
