@@ -16,6 +16,7 @@ class User:
     def __init__(self, username=None, id=None):
         self.username = username
         self.id = id
+        self.private = None
         self.name = None
         self.bio = None
         self.url = None
@@ -24,21 +25,21 @@ class User:
         self.followers = List()
         self.following = List()
 
-class Location:
-    def __init__(self):
-        self.id = None
-        self.url = None
-        self.short_name = None
-        self.name = None
-        self.address = None
-        self.city = None
+# class Location:
+#     def __init__(self):
+#         self.id = None
+#         self.url = None
+#         self.short_name = None
+#         self.name = None
+#         self.address = None
+#         self.city = None
 
-class Media:
-    def __init__(self):
-        self.id = None
-        self.height = None
-        self.width = None
-        self.url = None
+# class Media:
+#     def __init__(self):
+#         self.id = None
+#         self.height = None
+#         self.width = None
+#         self.url = None
 
 class Post:
     def __init__(self):

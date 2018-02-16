@@ -9,8 +9,9 @@ import data
 
 def user(user):
     u = data.User()
-    u.username = user.get('username', 0)
-    u.id = user.get('pk', 0)
+    u.username = user.get('username', None)
+    u.id = user.get('pk', None)
+    u.private = user.get('is_private', False)
     u.name = user.get('full_name', '')
     u.bio = user.get('biography', '')
     u.url = user.get('external_url', '')

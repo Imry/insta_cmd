@@ -7,18 +7,19 @@ import datetime
 import logging
 import os
 import pickle
+import shutil
 import sys
 import traceback
 from multiprocessing.dummy import Pool
-import shutil
-
 
 import requests
+from instagram_private_api import ClientError
 
 import data
 import excel_t
 import parse_t
 from api_t import connect
+from g import *
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(filename)-16s %(funcName)-16s:%(lineno)-4s %(levelname)-8s: %(message)s',
@@ -36,22 +37,19 @@ def my_excepthook(type, value, tback):
 sys.excepthook = my_excepthook
 
 
-DATA = []
-STATE = 'state'
-
-
-def state_save():
-    with open(STATE, 'wb') as p_f:
+def state_save(state_fn):
+    global DATA
+    with open(state_fn, 'wb') as p_f:
         pickle.dump(DATA, p_f)
 
 
-def state_load():
+def state_load(state_fn):
     global DATA
-    with open(STATE, 'rb') as p_f:
+    with open(state_fn, 'rb') as p_f:
         DATA = pickle.load(p_f)
 
 
-def users_import(fn):
+def load_csv(fn):
     with open(fn, newline='') as csv_fn:
         names_reader = csv.reader(csv_fn, delimiter=';')
         opt = []
@@ -59,7 +57,7 @@ def users_import(fn):
         for idx, row in enumerate(names_reader):
             if not row:
                 continue
-            name = row[0].strip()
+            name = row[0].strip().lower()
             if name != '':
                 if name.startswith('@'):
                     name = name[1:]
@@ -67,42 +65,128 @@ def users_import(fn):
 
             if idx == 0:
                 login = row[1].strip()
-                logging.info('login: %s' % login)
 
             if idx == 1:
                 pwd = row[1].strip()
-                logging.info('pwd: %s' % pwd)
 
-            o = row[2].strip()
+            o = row[2].strip().lower()
             if o != '':
                 opt.append(o)
 
+        logging.info('login: %s' % login)
+        logging.info('pwd: %s' % pwd)
         logging.info('users: %s' % '\n'.join([u.username for u in DATA]))
         logging.info('opt: %s' % '\n'.join(opt))
+
         return login, pwd, opt
 
 
-def users_export():
-    None
+def parse_opt(opt):
+    r = dict()
+    r['uipost'] = 1e6
+    r['ipdate'] = datetime.datetime(1900, 1, 1)
+    for o in opt:
+        if o.startswith('uipost'):
+            oo = o.split('=')
+            if len(oo) == 2:
+                r['uipost'] = int(oo[1])
+        elif o.startswith('ipdate'):
+            oo = o.split('=')
+            if len(oo) == 2:
+                oo = oo[1].split('-')
+                if len(oo) == 3:
+                    r['ipdate'] = datetime.datetime(int(oo[0]), int(oo[1]), int(oo[2]))
+        else:
+            r[o] = None
+    return r
+
+
+def work(opt,
+         is_entry,
+         message,
+         api_f,
+         args,
+         count,
+         item_key,
+         is_continue,
+         finalize):
+
+    data = []
+    cursor = None
+
+    if is_entry(opt):
+            print(message)
+            logging.info(message)
+
+            data = []
+            cursor = None
+
+            results = api_f(**args)
+            data.extend([parse_t.post(r)[0] for r in results.get('items', [])])
+            cursor = results.get('next_max_id')
+            sys.stdout.write('Loaded %s/%s' % (data, count))
+            sys.stdout.flush()
+
+            while DEBUG_DOWNLOAD_ALL and DATA[i].media.cursor and len(DATA[i].media.data) < posts_count and DATA[i].media.data[-1].time > posts_date:
+                args['max_id'] = cursor
+                result = api.user_feed(u.id, max_id=DATA[i].media.cursor)
+                DATA[i].media.cursor = result.get('next_max_id')
+                DATA[i].media.data.extend([parse_t.post(r)[0] for r in result.get('items', [])])
+                sys.stdout.write('\rLoaded %s/%s' % (len(DATA[i].media.data), DATA[i].media.count))
+                sys.stdout.flush()
+
+            DATA[i].media.data.sort(key=lambda x: x.time, reverse=True)
 
 
 def main(fn):
-    login, pwd, opt = users_import(fn)
+    login, pwd, opt = load_csv(fn)
+    opt = parse_opt(opt)
     api = connect(login, pwd, '%s.cookie' % login)
     if api is None:
+        logging.error('Login error')
+        print('Login error')
         return
 
-    # get users info
-    for i, u in enumerate(DATA):
-        print('Get info: %s' % u.username)
-        logging.info('Get info: %s' % u.username)
-        result = api.username_info(u.username)
-        user = result.get('user', {})
-        if user != {}:
-            DATA[i] = parse_t.user(user)
+    repeat = 0
+    is_repeat = True
+    while is_repeat and repeat < REPEAT:
+        is_repeat = False
+        repeat += 1
+
+        # get users info
+        for i, u in enumerate(DATA):
+            if not u.id:
+                try:
+                    result = api.username_info(u.username).get('user', {})
+                except ClientError:
+                    is_repeat = True
+                    done = 'Error'
+                else:
+                    if result != {}:
+                        DATA[i] = parse_t.user(result)
+                    done = 'Success'
+                finally:
+                    print('Get info: %s. Status: %s' % (u.username, done))
+                    logging.info('Get info: %s. Status: %s' % (u.username, done))
+
+        # per user
+        for i, u in enumerate(DATA):
+            # feed
 
 
-    DEBUG_DOWNLOAD_ALL = True
+            # comments ?
+
+
+            # followers
+
+
+            # following
+
+
+            None
+
+        # check errors
+        None
 
 
     # get media
@@ -139,48 +223,6 @@ def main(fn):
                 sys.stdout.flush()
 
             DATA[i].media.data.sort(key=lambda x: x.time, reverse=True)
-
-            # get comments
-            # if False: #'IPComments' not in opt:
-            #     print('\nGet comments: %s' % u.username)
-            #     logging.info('Get comments: %s' % u.username)
-            #     for j, p in enumerate(DATA[i].media.data):
-            #         result = api.media_comments(p.id)
-            #         DATA[i].media.data[j].comments.data.extend([parse_t.post(r)[0] for r in result.get('comments', [])])
-            #         DATA[i].media.data[j].comments.cursor = result.get('next_max_id')
-            #
-            #         while DATA[i].media.cursor and len(DATA[i].media.data) < posts_count and DATA[i].media.data[-1].time > posts_date:
-            #             result = api.user_feed(u.id, max_id=DATA[i].media.cursor)
-            #             DATA[i].media.cursor = result.get('next_max_id')
-            #             DATA[i].media.data.extend([parse_t.post(r)[0] for r in result.get('items', [])])
-            #
-            #         DATA[i].media.data.sort(key=lambda x: x.time, reverse=True)
-            #         sys.stdout.write('\rLoaded %s/%s' % (j, len(DATA[i].media.data)))
-            #         sys.stdout.flush()
-
-
-    def get_users():
-        if 'IULoginIn' not in opt:
-            for i, u in enumerate(DATA):
-                print('\nGet followers: %s' % u.username)
-                logging.info('Get followers: %s' % u.username)
-
-                result = api.user_followers(u.id)
-                DATA[i].followers.data.extend([parse_t.user_small(r) for r in result.get('users', [])])
-                DATA[i].followers.cursor = result.get('next_max_id')
-                sys.stdout.write('Loaded %s/%s' % (len(DATA[i].followers.data), DATA[i].followers.count))
-                sys.stdout.flush()
-
-                while DEBUG_DOWNLOAD_ALL and DATA[i].followers.cursor:
-                    result = api.user_feed(u.id, max_id=DATA[i].followers.cursor)
-                    DATA[i].followers.cursor = result.get('next_max_id')
-                    DATA[i].followers.data.extend([parse_t.user_small(r) for r in result.get('items', [])])
-                    sys.stdout.write('\rLoaded %s/%s' % (len(DATA[i].followers.data), DATA[i].followers.count))
-                    sys.stdout.flush()
-                    if len(DATA[i].followers.data) >= 1e6:
-                        break
-
-                DATA[i].followers.data.sort(key=lambda x: x.id)
 
     # get followers
     if 'IULoginIn' not in opt:
