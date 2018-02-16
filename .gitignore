@@ -7,6 +7,7 @@
 auth.json
 config.json
 cookie.json
+*.cookie
 
 .idea/
 __pycache__/
@@ -14,6 +15,8 @@ __pycache__/
 build_32/
 build/
 dist/
+win7x64/
 
 .bkp/
 bkp2/
+test/

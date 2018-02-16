@@ -7,35 +7,10 @@ import json
 import logging
 import os
 
-from PyQt5.QtCore import QThread, pyqtSignal
-
 from instagram_private_api import (
     Client, ClientError, ClientLoginError,
     ClientCookieExpiredError, ClientLoginRequiredError,
     __version__ as client_version)
-
-
-class Connector(QThread):
-    status = pyqtSignal(str)
-
-    def __init__(self, cookie_file):
-        QThread.__init__(self)
-        self.api = None
-        self.cookie_file = cookie_file
-        self.username = ''
-        self.password = ''
-        self.action = True
-
-    def __del__(self):
-        self.wait()
-
-    def run(self):
-        self.status.emit('Подключение...')
-        self.api = connect(self.username, self.password, self.cookie_file)
-        if self.api is None:
-            self.status.emit('Не подключено')
-        else:
-            self.status.emit('Подключено')
 
 
 def connect(username, password, cookie_file):
