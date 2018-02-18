@@ -54,5 +54,5 @@ class Post:
         self.text = None
         self.media = []
         self.media_str = None
-        self.location = Location()
+        # self.location = Location()
         self.location_str = None
