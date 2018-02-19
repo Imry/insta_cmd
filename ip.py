@@ -24,16 +24,19 @@ from data import User
 from g import *
 
 logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(process)-16s %(filename)-16s %(funcName)-16s:%(lineno)-4s %(levelname)-8s: %(message)s',
-                    handlers=[logging.FileHandler(os.path.join(os.path.dirname(__file__), __file__ + '.log'), 'a+', 'utf-8')])
+                    format='%(asctime)s %(process)-16s %(filename)-16s %(funcName)-16s:%(lineno)-4s %(levelname)-8s: \
+                    %(message)s',
+                    handlers=[logging.FileHandler(os.path.join(os.path.dirname(__file__), __file__ + '.log'),
+                                                  'a+',
+                                                  'utf-8')])
 logging.info('==================================================')
 
 
-def my_excepthook(type, value, tback):
+def my_excepthook(t, value, tback):
     # log the exception here
-    logging.error("Uncaught exception", exc_info=(type, value, tback))
+    logging.error("Uncaught exception", exc_info=(t, value, tback))
     # then call the default handler
-    sys.__excepthook__(type, value, tback)
+    sys.__excepthook__(t, value, tback)
 
 
 sys.excepthook = my_excepthook
@@ -174,7 +177,7 @@ def get_url(data, dn):
 
 
 def create_dirs(data, dn):
-    for u in DATA:
+    for u in data:
         if os.path.exists(os.path.join(dn, u.username)):
             shutil.rmtree(os.path.join(dn, u.username))
         for p in u.media.data:
@@ -194,7 +197,7 @@ def main(fn):
             print('Login error')
             return
     except Exception:
-        logging.error('Unexpeted error')
+        logging.error('Unexpected error')
         logging.error(traceback.format_exc())
         return
 
@@ -242,7 +245,7 @@ def main(fn):
                                 DATA[i].media.cursor = cursor
                                 is_repeat = True
                 except Exception as e:
-                    logging.error('Unexpeted error')
+                    logging.error('Unexpected error')
                     logging.error(traceback.format_exc())
                     is_repeat = True
 
@@ -266,7 +269,7 @@ def main(fn):
                                 DATA[i].followers.cursor = cursor
                                 is_repeat = True
                 except Exception as e:
-                    logging.error('Unexpeted error')
+                    logging.error('Unexpected error')
                     logging.error(traceback.format_exc())
                     is_repeat = True
 
@@ -288,7 +291,7 @@ def main(fn):
                                 DATA[i].following.cursor = cursor
                                 is_repeat = True
                 except Exception as e:
-                    logging.error('Unexpeted error')
+                    logging.error('Unexpected error')
                     logging.error(traceback.format_exc())
                     is_repeat = True
 
@@ -354,13 +357,13 @@ def main(fn):
             global total
             total = len(work)
             pool = Pool(CONCURENT_DOWNLOADS)
-            r = pool.map(save_img, work)
+            _ = pool.map(save_img, work)
             pool.close()
             pool.join()
             print('Loaded')
 
         except Exception as e:
-            logging.error('Unexpeted error')
+            logging.error('Unexpected error')
             logging.error(traceback.format_exc())
 
     # Save xls
@@ -371,8 +374,8 @@ def main(fn):
         print('Delete CSV')
         os.remove(fn)
 
-    except Exception as e:
-        logging.error('Unexpeted error')
+    except Exception:
+        logging.error('Unexpected error')
         logging.error(traceback.format_exc())
 
     print('Ok!')
