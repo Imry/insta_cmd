@@ -356,7 +356,7 @@ def main(fn):
             work = [(k, v) for k, v in img.items()]
             global total
             total = len(work)
-            pool = Pool(CONCURENT_DOWNLOADS)
+            pool = Pool(CONCURRENT_DOWNLOADS)
             _ = pool.map(save_img, work)
             pool.close()
             pool.join()
