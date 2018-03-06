@@ -49,18 +49,20 @@ def write_info(sheet, data, col, row):
 
 
 def write_user_list(sheet, data, col, row, title, key):
+    l = getattr(data, key, None)
+    if not l:
+        return
+
     writer = create_write(sheet, col, row)
 
     writer(0, 0, title, STYLE_BOLD)
+    writer(1, 0, l.count)
     writer(2, 0, 'IULogin', STYLE_BOLD)
     writer(2, 1, 'IUName', STYLE_BOLD)
     writer(2, 2, 'IUFoto', STYLE_BOLD)
 
-    l = getattr(data, key, None)
-    if not l:
-        return
-    writer(1, 0, l.count)
-    for idx, f in enumerate(l.data):
+    cd = l.data[:1000000]
+    for idx, f in enumerate(cd):
         writer(3 + idx, 0, f.username)
         writer(3 + idx, 1, f.name, STYLE_WRAP)
         writer(3 + idx, 2, *link(f.img))
@@ -96,20 +98,19 @@ def write_media(sheet, data, col, row):
         shift += max([1, len(location), len(m)])
 
 
-def save(data, fname):
+def save(d, fname):
     book = openpyxl.Workbook()
-    for sheet_idx, d in enumerate(data):
-        sheet = book.create_sheet(d.username, sheet_idx)
+    sheet = book.create_sheet(d.username, 0)
 
-        for i in range(19):
-            i += 1
-            if i not in [9, 13, 17]:
-                sheet.column_dimensions[get_column_letter(i)].width = 50
-        sheet.column_dimensions[get_column_letter(20)].width = 200
+    for i in range(19):
+        i += 1
+        if i not in [9, 13, 17]:
+            sheet.column_dimensions[get_column_letter(i)].width = 50
+    sheet.column_dimensions[get_column_letter(20)].width = 200
 
-        write_info(sheet, d, 0, 0)
-        write_user_list(sheet, d, 0, 5, 'IULoginIn',  'following')
-        write_user_list(sheet, d, 0, 9, 'IULoginOut', 'followers')
-        write_media(sheet, d, 0, 13)
+    write_info(sheet, d, 0, 0)
+    write_user_list(sheet, d, 0, 5, 'IULoginIn',  'following')
+    write_user_list(sheet, d, 0, 9, 'IULoginOut', 'followers')
+    write_media(sheet, d, 0, 13)
 
     book.save(fname)

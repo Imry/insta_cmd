@@ -4,7 +4,6 @@
 
 import argparse
 import csv
-import datetime
 import logging
 import os
 import pickle
@@ -43,21 +42,27 @@ def my_excepthook(t, value, tback):
 sys.excepthook = my_excepthook
 
 
-def log_p(msg):
-    logging.info(msg)
+def plog(log_f, msg):
+    log_f(msg)
     print(msg)
+
+def plog_i(msg):
+    plog(logging.info, msg)
 
 
 def state_save(state_fn, data):
-    logging.info('Save state: %s' % state_fn)
-    print('Save state: %s' % state_fn)
+    plog_i('Save state: %s' % state_fn)
     with open(state_fn, 'wb') as p_f:
         pickle.dump(data, p_f)
+    plog_i('Save state: %s. Done' % state_fn)
 
 
 def state_load(state_fn):
+    plog_i('Load state: %s' % state_fn)
     with open(state_fn, 'rb') as p_f:
-        return pickle.load(p_f)
+        data = pickle.load(p_f)
+        plog_i('Load state: %s. Done' % state_fn)
+        return data
 
 
 def load_csv(fn):
@@ -91,19 +96,19 @@ def load_csv(fn):
 
 def parse_opt(opt):
     r = dict()
-    r['uipost'] = 1e6
-    r['ipdate'] = datetime.datetime(1900, 1, 1)
+    r[OPT_POST_COUNT] = OPT_POST_COUNT_DEFAULT
+    r[OPT_POST_UNTIL_DATE] = OPT_POST_UNTIL_DATE_DEFAULT
     for o in opt:
-        if o.startswith('uipost'):
+        if o.startswith(OPT_POST_COUNT):
             oo = o.split('=')
             if len(oo) == 2:
-                r['uipost'] = int(oo[1])
-        elif o.startswith('ipdate'):
+                r[OPT_POST_COUNT] = int(oo[1])
+        elif o.startswith(OPT_POST_UNTIL_DATE):
             oo = o.split('=')
             if len(oo) == 2:
                 oo = oo[1].split('-')
                 if len(oo) == 3:
-                    r['ipdate'] = datetime.datetime(int(oo[0]), int(oo[1]), int(oo[2]))
+                    r[OPT_POST_UNTIL_DATE] = datetime.datetime(int(oo[0]), int(oo[1]), int(oo[2]))
         else:
             r[o] = None
     return r
@@ -128,14 +133,20 @@ def get_info(api, username):
     ok, result = api_call(api.username_info, {'user_name': username})
     if ok:
         if result != {}:
-            log_p('Get info: %s. Done' % username)
+            plog_i('Get info: %s. Done' % username)
             return True, parse_t.user(result.get('user', {}))
         else:
-            log_p('Get info: %s. Empty' % username)
+            plog_i('Get info: %s. Empty' % username)
             return False, None
     else:
-        log_p('Get info: %s. Error' % username)
+        plog_i('Get info: %s. Error' % username)
         return False, None
+
+
+
+def stdout_p(msg):
+    sys.stdout.write(msg)
+    sys.stdout.flush()
 
 
 def get_list(message,
@@ -145,69 +156,79 @@ def get_list(message,
              is_continue,
              items_key,
              parse):
-    logging.info(message)
-    if not lst.data:
-        ok, results = api_call(api_f, args)
-        if ok:
-            lst.data.extend([parse(r) for r in results.get(items_key, [])])
-            lst.cursor = results.get('next_max_id')
-            sys.stdout.write('%s %s/%s' % (message, len(lst.data), lst.count))
-            sys.stdout.flush()
-        else:
-            sys.stdout.write('\r%s %s/%s Error\n' % (message, len(lst.data), lst.count))
-            sys.stdout.flush()
-            return False, lst
-    while DEBUG_DOWNLOAD_ALL and lst.cursor and is_continue(lst.data):
-        time.sleep(REQUEST_WAIT)
-        args['max_id'] = lst.cursor
-        ok, results = api_call(api_f, args)
-        if ok:
-            lst.data.extend([parse(r) for r in results.get(items_key, [])])
-            lst.cursor = results.get('next_max_id')
-            sys.stdout.write('\r%s %s/%s' % (message, len(lst.data), lst.count))
-            sys.stdout.flush()
-        else:
-            sys.stdout.write('\r%s %s/%s Error\n' % (message, len(lst.data), lst.count))
-            sys.stdout.flush()
-            return False, lst
-    sys.stdout.write('\r%s %s/%s Done\n' % (message, len(lst.data), lst.count))
-    sys.stdout.flush()
-    return True, lst
+    try:
+        if not lst.data:
+            logging.info(message)
+            ok, results = api_call(api_f, args)
+            if ok:
+                lst.data.extend([parse(r) for r in results.get(items_key, [])])
+                lst.cursor = results.get('next_max_id')
+                sys.stdout.write('%s %s/%s' % (message, len(lst.data), lst.count))
+                sys.stdout.flush()
+
+            else:
+                sys.stdout.write('%s %s/%s Error\n' % (message, len(lst.data), lst.count))
+                sys.stdout.flush()
+                return False, lst
+        while DEBUG_DOWNLOAD_ALL and lst.cursor and is_continue(lst.data):
+            time.sleep(REQUEST_WAIT)
+            args['max_id'] = lst.cursor
+            ok, results = api_call(api_f, args)
+            if ok:
+                lst.data.extend([parse(r) for r in results.get(items_key, [])])
+                lst.cursor = results.get('next_max_id')
+                sys.stdout.write('\r%s %s/%s' % (message, len(lst.data), lst.count))
+                sys.stdout.flush()
+            else:
+                sys.stdout.write('\r%s %s/%s Error\n' % (message, len(lst.data), lst.count))
+                sys.stdout.flush()
+                return False, lst
+        sys.stdout.write('\r%s %s/%s Done\n' % (message, len(lst.data), lst.count))
+        sys.stdout.flush()
+        return True, lst
+
+    except Exception:
+        logging.error('Unexpected error')
+        logging.error(traceback.format_exc())
+        return False, lst
 
 
-def get_url(data, dn):
-    img = {}
-    for u in data:
-        # avatar
-        img[os.path.join(dn, u.username, 'avatar.jpg')] = u.img
-        # feed
-        for p in u.media.data:
-            pp = p.media_str.split('\n')
-            for j, ppp in enumerate(pp):
-                ext = ppp.split('?')[0].rsplit('.', 1)[1]
-                img[os.path.join(dn, u.username, 'media', p.code, str(j) + '.' + ext)] = ppp
-        # followers & following
-        for ff in ['followers', 'following']:
-            for f in getattr(u, ff).data:
-                img[os.path.join(dn, u.username, ff, f.username + '.jpg')] = f.img
+def get_url(u, dn):
+    # avatar
+    img = {os.path.join(dn, u.username, 'avatar.jpg'): u.img}
+    # feed
+    for p in u.media.data:
+        pp = p.media_str.split('\n')
+        for j, ppp in enumerate(pp):
+            ext = ppp.split('?')[0].rsplit('.', 1)[1]
+            img[os.path.join(dn, u.username, 'media', p.code, str(j) + '.' + ext)] = ppp
+    # followers & following
+    for ff in ['followers', 'following']:
+        for f in getattr(u, ff).data:
+            img[os.path.join(dn, u.username, ff, f.username + '.jpg')] = f.img
     return img
 
 
-def create_dirs(data, dn):
-    for u in data:
-        if os.path.exists(os.path.join(dn, u.username)):
-            shutil.rmtree(os.path.join(dn, u.username))
-        for p in u.media.data:
-            if not os.path.exists(os.path.join(dn, u.username, 'media', p.code)):
-                os.makedirs(os.path.join(dn, u.username, 'media', p.code))
-        os.makedirs(os.path.join(dn, u.username, 'followers'))
-        os.makedirs(os.path.join(dn, u.username, 'following'))
+def create_dirs(u, dn):
+    if os.path.exists(os.path.join(dn, u.username)):
+        shutil.rmtree(os.path.join(dn, u.username))
+    for p in u.media.data:
+        if not os.path.exists(os.path.join(dn, u.username, 'media', p.code)):
+            os.makedirs(os.path.join(dn, u.username, 'media', p.code))
+    os.makedirs(os.path.join(dn, u.username, 'followers'))
+    os.makedirs(os.path.join(dn, u.username, 'following'))
+
+
+class NeedRepeatException(Exception):
+    pass
 
 
 def main(fn):
+    fnd = os.path.dirname(fn)
     try:
         users, login, pwd, opt = load_csv(fn)
         opt = parse_opt(opt)
+        logging.info('Parsed options: %s' % opt)
         api = connect(login, pwd, '%s.cookie' % login)
         if api is None:
             logging.error('Login error')
@@ -218,160 +239,150 @@ def main(fn):
         logging.error(traceback.format_exc())
         return
 
-    global DATA
-    if 'load' in opt and os.path.exists(fn + '.' + STATE_EXT):
-        DATA = state_load(fn + '.' + STATE_EXT)
-    else:
-        for name in users:
-            DATA.append(User(username=name))
+    for i, u in enumerate(users, 1):
+        plog_i('%s / %s %s' % (i, len(users), u))
 
-    repeat = 0
-    is_repeat = True
-    while is_repeat and repeat < REPEAT_COUNT:
-        is_repeat = False
-        repeat += 1
+        repeat = 0
+        is_repeat = True
+        while is_repeat and repeat < REPEAT_COUNT:
+            is_repeat = False
+            repeat += 1
 
-        # get users info
-        for i, u in enumerate(DATA):
-            if not u.id:
-                ok, data = get_info(api, u.username)
-                if ok:
-                    DATA[i] = data
+            try:
+                # get users info
+                state_fn = os.path.join(fnd, u + '.' + STATE_EXT)
+                if OPT_LOAD_STATE in opt and os.path.exists(state_fn):
+                    plog_i('Load from state')
+                    DATA = state_load(state_fn)
+                    plog_i('Done')
                 else:
-                    is_repeat = True
+                    ok, data = get_info(api, u)
+                    if ok:
+                        DATA = data
+                    else:
+                        is_repeat = True
+                        raise NeedRepeatException()
 
-        # per user
-        for i, u in enumerate(DATA):
-            print('User: %s' % u.username)
-            if u.id and not u.private:
-                try:
-                    # feed
-                    if opt['uipost'] > 0:
-                        if not u.media.data or u.media.cursor:
-                            ok, data = get_list('Get media',
-                                                api.user_feed,
-                                                {'user_id': u.id},
-                                                u.media,
-                                                lambda d: len(d) < opt['uipost'] and d[-1].time > opt['ipdate'],
-                                                'items',
-                                                parse_t.post)
-                            DATA[i].media = data
-                            if ok:
-                                DATA[i].media.data.sort(key=lambda x: x.time, reverse=True)
-                            else:
-                                is_repeat = True
-                except Exception as e:
-                    logging.error('Unexpected error')
-                    logging.error(traceback.format_exc())
-                    is_repeat = True
+                # feed
+                if opt[OPT_POST_COUNT] > 0:
+                    if not DATA.media.data or DATA.media.cursor: # Empty or need to redownload
+                        ok, data = get_list('Get media',
+                                            api.user_feed,
+                                            {'user_id': DATA.id},
+                                            DATA.media,
+                                            lambda d: len(d) < opt[OPT_POST_COUNT] and d[-1].time > opt[OPT_POST_UNTIL_DATE],
+                                            'items',
+                                            parse_t.post)
+                        DATA.media = data
+                        if ok:
+                            DATA.media.data.sort(key=lambda x: x.time, reverse=True)
+                        else:
+                            is_repeat = True
 
-                # comments ?
-
-                try:
-                    # followers
-                    if 'iuloginin' not in opt:
-                        if not u.followers.data or u.followers.cursor:
-                            ok, data = get_list('Get followers',
-                                                api.user_followers,
-                                                {'user_id': u.id},
-                                                u.followers,
-                                                lambda _: True,
-                                                'users',
-                                                parse_t.user_small)
-                            DATA[i].followers = data
-                            if ok:
-                                DATA[i].followers.data.sort(key=lambda x: x.id)
-                            else:
-                                is_repeat = True
-                except Exception as e:
-                    logging.error('Unexpected error')
-                    logging.error(traceback.format_exc())
-                    is_repeat = True
+                # followers
+                if 'iuloginin' not in opt:
+                    if not DATA.followers.data or DATA.followers.cursor:
+                        ok, data = get_list('Get followers',
+                                            api.user_followers,
+                                            {'user_id': DATA.id},
+                                            DATA.followers,
+                                            lambda _: True,
+                                            'users',
+                                            parse_t.user_small)
+                        DATA.followers = data
+                        if ok:
+                            DATA.followers.data.sort(key=lambda x: x.id)
+                        else:
+                            is_repeat = True
 
                 # following
-                try:
-                    if 'iuloginout' not in opt:
-                        if not u.following.data or u.following.cursor:
-                            ok, data = get_list('Get following',
-                                                api.user_following,
-                                                {'user_id': u.id},
-                                                u.following,
-                                                lambda _: True,
-                                                'users',
-                                                parse_t.user_small)
-                            DATA[i].following = data
-                            if ok:
-                                DATA[i].following.data.sort(key=lambda x: x.id)
-                            else:
-                                is_repeat = True
-                except Exception as e:
-                    logging.error('Unexpected error')
-                    logging.error(traceback.format_exc())
-                    is_repeat = True
+                if 'iuloginout' not in opt:
+                    if not DATA.following.data or DATA.following.cursor:
+                        ok, data = get_list('Get following',
+                                            api.user_following,
+                                            {'user_id': DATA.id},
+                                            DATA.following,
+                                            lambda _: True,
+                                            'users',
+                                            parse_t.user_small)
+                        DATA.following = data
+                        if ok:
+                            DATA.following.data.sort(key=lambda x: x.id)
+                        else:
+                            is_repeat = True
 
-        # check errors
-        if is_repeat:
-            state_save(fn + '.' + STATE_EXT, DATA)
-            wait_time = REPEAT_WAIT * repeat
-            log_p('There have been errors, an attempt to download the missed things, waiting %s sec.' % wait_time)
-            time.sleep(wait_time)
+                if OPT_SAVE_STATE in opt:
+                    state_save(fn + '.' + STATE_EXT, DATA)
 
-    state_save(fn + '.' + STATE_EXT, DATA)
-
-    # load images
-    if 'foto' not in opt:
-        print('\nLoading photos')
-        try:
-            dn = os.path.dirname(fn)
-            img = get_url(DATA, dn)
-            create_dirs(DATA, dn)
-
-            def save_img(data):
-                global idx, total
-                idx += 1
-                p, url = data[0], data[1]
-                print('Load %s/%s %s' % (idx, total, p))
-                # sys.stdout.write('\rLoaded %s/%s' % (idx, total))
-                # sys.stdout.flush()
-                repeat = 0
-                is_repeat = True
-                while is_repeat and repeat < REPEAT_COUNT:
-                    is_repeat = False
-                    repeat += 1
+                # load images
+                if 'foto' not in opt:
+                    print('\nLoading photos')
                     try:
-                        r = requests.get(url)
-                        with open(p, "wb") as i_f:
-                            i_f.write(r.content)
-                    except Exception as e:
+                        dn = os.path.dirname(fn)
+                        img = get_url(DATA, dn)
+                        create_dirs(DATA, dn)
+
+                        def save_img(data):
+                            global idx, total
+                            idx += 1
+                            p, url = data[0], data[1]
+                            print('Load %s/%s %s' % (idx, total, p))
+                            # sys.stdout.write('\rLoaded %s/%s' % (idx, total))
+                            # sys.stdout.flush()
+                            repeat = 0
+                            is_repeat = True
+                            while is_repeat and repeat < REPEAT_COUNT:
+                                is_repeat = False
+                                repeat += 1
+                                try:
+                                    r = requests.get(url)
+                                    with open(p, "wb") as i_f:
+                                        i_f.write(r.content)
+                                except Exception as e:
+                                    logging.error(traceback.format_exc())
+                                    is_repeat = True
+
+                        work = [(k, v) for k, v in img.items()]
+                        global total
+                        total = len(work)
+                        pool = Pool(CONCURRENT_DOWNLOADS)
+                        _ = pool.map(save_img, work)
+                        pool.close()
+                        pool.join()
+                        print('Loaded')
+
+                    except Exception:
+                        logging.error('Unexpected error')
                         logging.error(traceback.format_exc())
-                        is_repeat = True
 
-            work = [(k, v) for k, v in img.items()]
-            global total
-            total = len(work)
-            pool = Pool(CONCURRENT_DOWNLOADS)
-            _ = pool.map(save_img, work)
-            pool.close()
-            pool.join()
-            print('Loaded')
+                # Save xls
+                print('Create report')
+                # excel_t.save(DATA, fn.rsplit('.', 1)[0] + '.xls')
+                excel_t_xlsx.save(DATA, os.path.join(fnd, u + '.xlsx'))
 
-        except Exception:
-            logging.error('Unexpected error')
-            logging.error(traceback.format_exc())
 
-    # Save xls
-    try:
-        print('Create report')
-        # excel_t.save(DATA, fn.rsplit('.', 1)[0] + '.xls')
-        excel_t_xlsx.save(DATA, fn.rsplit('.', 1)[0] + '.xlsx')
+            except KeyboardInterrupt:
+                logging.info('KeyboardInterrupt')
+                sys.exit(0)
+            except NeedRepeatException:
+                logging.info('Need repeat')
+                is_repeat = True
+            except Exception:
+                logging.error('Unexpected error')
+                logging.error(traceback.format_exc())
+                is_repeat = True
 
-        print('Delete CSV')
-        os.remove(fn)
+            # check errors
+            if is_repeat:
+                if 'save' in opt:
+                    state_save(os.path.join(fnd, u + '.' + STATE_EXT), DATA)
+                wait_time = REPEAT_WAIT * repeat
+                plog_i('There have been errors, an attempt to download the missed things.')
+                plog_i('Attempt: %s / %s. Waiting %s sec.' % (repeat, REPEAT_COUNT, wait_time))
+                time.sleep(wait_time)
 
-    except Exception:
-        logging.error('Unexpected error')
-        logging.error(traceback.format_exc())
-
+    print('Delete CSV')
+    os.remove(fn)
     print('Ok!')
 
 
@@ -385,11 +396,11 @@ if __name__ == '__main__':
     parser.add_argument('csv', help='Input file with data')
     csv_fn = parser.parse_args().csv
     logging.info('CSV: %s' % csv_fn)
-    if os.path.exists(csv_fn):
+    if os.path.isfile(csv_fn):
         try:
             main(csv_fn)
         except Exception:
+            logging.error('Unexpected error')
             logging.error(traceback.format_exc())
-            # Logs the error appropriately.
     else:
-        log_p('File %s not found.' % csv_fn)
+        plog_i('File %s not found.' % csv_fn)
