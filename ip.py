@@ -195,28 +195,21 @@ def get_list(message,
 
 def get_url(u, dn):
     # avatar
-    img = {os.path.join(dn, u.username, 'avatar.jpg'): u.img}
+    img = {os.path.join(dn, u.username, u.img.split('/')[-1]): u.img}
     # feed
     for p in u.media.data:
         pp = p.media_str.split('\n')
         for j, ppp in enumerate(pp):
             ext = ppp.split('?')[0].rsplit('.', 1)[1]
-            img[os.path.join(dn, u.username, 'media', p.code, str(j) + '.' + ext)] = ppp
-    # followers & following
-    for ff in ['followers', 'following']:
-        for f in getattr(u, ff).data:
-            img[os.path.join(dn, u.username, ff, f.username + '.jpg')] = f.img
+            if ext == 'jpg':
+                img[os.path.join(dn, u.username, p.code, str(j) + '.' + ext)] = ppp
     return img
 
 
 def create_dirs(u, dn):
-    if os.path.exists(os.path.join(dn, u.username)):
-        shutil.rmtree(os.path.join(dn, u.username))
     for p in u.media.data:
-        if not os.path.exists(os.path.join(dn, u.username, 'media', p.code)):
-            os.makedirs(os.path.join(dn, u.username, 'media', p.code))
-    os.makedirs(os.path.join(dn, u.username, 'followers'))
-    os.makedirs(os.path.join(dn, u.username, 'following'))
+        if not os.path.exists(os.path.join(dn, u.username, p.code)):
+            os.makedirs(os.path.join(dn, u.username, p.code))
 
 
 class NeedRepeatException(Exception):
@@ -244,6 +237,7 @@ def main(fn):
 
         repeat = 0
         is_repeat = True
+        DATA = User()
         while is_repeat and repeat < REPEAT_COUNT:
             is_repeat = False
             repeat += 1
@@ -318,28 +312,25 @@ def main(fn):
                 if 'foto' not in opt:
                     print('\nLoading photos')
                     try:
-                        dn = os.path.dirname(fn)
-                        img = get_url(DATA, dn)
-                        create_dirs(DATA, dn)
+                        img = get_url(DATA, fnd)
+                        create_dirs(DATA, fnd)
 
                         def save_img(data):
                             global idx, total
-                            idx += 1
                             p, url = data[0], data[1]
-                            print('Load %s/%s %s' % (idx, total, p))
-                            # sys.stdout.write('\rLoaded %s/%s' % (idx, total))
-                            # sys.stdout.flush()
                             repeat = 0
                             is_repeat = True
                             while is_repeat and repeat < REPEAT_COUNT:
                                 is_repeat = False
                                 repeat += 1
                                 try:
-                                    r = requests.get(url)
+                                    r = requests.get(url, timeout=30)
                                     with open(p, "wb") as i_f:
                                         i_f.write(r.content)
-                                except Exception as e:
-                                    logging.error(traceback.format_exc())
+                                        idx += 1
+                                        print('Loaded %s/%s %s' % (idx, total, p))
+                                except Exception:
+                                    logging.warning('Expected error. repeat = %s' % repeat)
                                     is_repeat = True
 
                         work = [(k, v) for k, v in img.items()]
@@ -357,9 +348,7 @@ def main(fn):
 
                 # Save xls
                 print('Create report')
-                # excel_t.save(DATA, fn.rsplit('.', 1)[0] + '.xls')
                 excel_t_xlsx.save(DATA, os.path.join(fnd, u + '.xlsx'))
-
 
             except KeyboardInterrupt:
                 logging.info('KeyboardInterrupt')
@@ -374,7 +363,7 @@ def main(fn):
 
             # check errors
             if is_repeat:
-                if 'save' in opt:
+                if OPT_SAVE_STATE in opt:
                     state_save(os.path.join(fnd, u + '.' + STATE_EXT), DATA)
                 wait_time = REPEAT_WAIT * repeat
                 plog_i('There have been errors, an attempt to download the missed things.')
