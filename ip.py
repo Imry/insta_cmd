@@ -170,7 +170,10 @@ def get_list(message,
                 sys.stdout.write('%s %s/%s Error\n' % (message, len(lst.data), lst.count))
                 sys.stdout.flush()
                 return False, lst
-        while DEBUG_DOWNLOAD_ALL and lst.cursor and is_continue(lst.data):
+        while DEBUG_DOWNLOAD_ALL and lst.cursor:
+            if not is_continue(lst.data):
+                lst.cursor = None
+                break
             time.sleep(REQUEST_WAIT)
             args['max_id'] = lst.cursor
             ok, results = api_call(api_f, args)
@@ -195,28 +198,25 @@ def get_list(message,
 
 def get_url(u, dn):
     # avatar
-    img = {os.path.join(dn, u.username, 'avatar.jpg'): u.img}
+    img = {os.path.join(dn, u.username, u.img.split('/')[-1]): u.img}
     # feed
     for p in u.media.data:
-        pp = p.media_str.split('\n')
-        for j, ppp in enumerate(pp):
-            ext = ppp.split('?')[0].rsplit('.', 1)[1]
-            img[os.path.join(dn, u.username, 'media', p.code, str(j) + '.' + ext)] = ppp
-    # followers & following
-    for ff in ['followers', 'following']:
-        for f in getattr(u, ff).data:
-            img[os.path.join(dn, u.username, ff, f.username + '.jpg')] = f.img
+        if not os.path.exists(os.path.join(dn, u.username, p.code)):
+            pp = p.media_str.split('\n')
+            for j, ppp in enumerate(pp):
+                ext = ppp.split('?')[0].rsplit('.', 1)[1]
+                img[os.path.join(dn, u.username, p.code, str(j) + '.' + ext)] = ppp
+    # # followers & following
+    # for ff in ['followers', 'following']:
+    #     for f in getattr(u, ff).data:
+    #         img[os.path.join(dn, u.username, ff, f.username + '.jpg')] = f.img
     return img
 
 
 def create_dirs(u, dn):
-    if os.path.exists(os.path.join(dn, u.username)):
-        shutil.rmtree(os.path.join(dn, u.username))
     for p in u.media.data:
-        if not os.path.exists(os.path.join(dn, u.username, 'media', p.code)):
-            os.makedirs(os.path.join(dn, u.username, 'media', p.code))
-    os.makedirs(os.path.join(dn, u.username, 'followers'))
-    os.makedirs(os.path.join(dn, u.username, 'following'))
+        if not os.path.exists(os.path.join(dn, u.username, p.code)):
+            os.makedirs(os.path.join(dn, u.username, p.code))
 
 
 class NeedRepeatException(Exception):
@@ -239,6 +239,7 @@ def main(fn):
         logging.error(traceback.format_exc())
         return
 
+    ok = True
     for i, u in enumerate(users, 1):
         plog_i('%s / %s %s' % (i, len(users), u))
 
@@ -273,9 +274,22 @@ def main(fn):
                                             lambda d: len(d) < opt[OPT_POST_COUNT] and d[-1].time > opt[OPT_POST_UNTIL_DATE],
                                             'items',
                                             parse_t.post)
+
                         DATA.media = data
+
                         if ok:
                             DATA.media.data.sort(key=lambda x: x.time, reverse=True)
+
+                            break_i = None
+                            for i, d in enumerate(DATA.media.data):
+                                if d.time <= opt[OPT_POST_UNTIL_DATE]:
+                                    break_i = i
+                                    break
+                            if break_i is not None:
+                                DATA.media.data = DATA.media.data[:break_i]
+
+                            if len(DATA.media.data) > opt[OPT_POST_COUNT]:
+                                DATA.media.data = DATA.media.data[:opt[OPT_POST_COUNT]]
                         else:
                             is_repeat = True
 
@@ -318,27 +332,24 @@ def main(fn):
                 if 'foto' not in opt:
                     print('\nLoading photos')
                     try:
-                        dn = os.path.dirname(fn)
-                        img = get_url(DATA, dn)
-                        create_dirs(DATA, dn)
+                        img = get_url(DATA, fnd)
+                        create_dirs(DATA, fnd)
 
                         def save_img(data):
                             global idx, total
-                            idx += 1
-                            p, url = data[0], data[1]
-                            print('Load %s/%s %s' % (idx, total, p))
-                            # sys.stdout.write('\rLoaded %s/%s' % (idx, total))
-                            # sys.stdout.flush()
+                            p, url = data
                             repeat = 0
                             is_repeat = True
                             while is_repeat and repeat < REPEAT_COUNT:
                                 is_repeat = False
                                 repeat += 1
                                 try:
-                                    r = requests.get(url)
+                                    r = requests.get(url, timeout=60)
                                     with open(p, "wb") as i_f:
                                         i_f.write(r.content)
-                                except Exception as e:
+                                        idx += 1
+                                        print('Loaded %s/%s %s' % (idx, total, p))
+                                except Exception:
                                     logging.error(traceback.format_exc())
                                     is_repeat = True
 
@@ -381,10 +392,15 @@ def main(fn):
                 plog_i('Attempt: %s / %s. Waiting %s sec.' % (repeat, REPEAT_COUNT, wait_time))
                 time.sleep(wait_time)
 
-    print('Delete CSV')
-    os.remove(fn)
-    print('Ok!')
+        if is_repeat:
+            ok = False
 
+    if ok:
+        plog_i('Delete CSV')
+        os.remove(fn)
+        plog_i('Ok!')
+    else:
+        plog_i('Keep CSV')
 
 idx = 0
 total = 0
