@@ -206,10 +206,6 @@ def get_url(u, dn):
             for j, ppp in enumerate(pp):
                 ext = ppp.split('?')[0].rsplit('.', 1)[1]
                 img[os.path.join(dn, u.username, p.code, str(j) + '.' + ext)] = ppp
-    # # followers & following
-    # for ff in ['followers', 'following']:
-    #     for f in getattr(u, ff).data:
-    #         img[os.path.join(dn, u.username, ff, f.username + '.jpg')] = f.img
     return img
 
 
@@ -245,6 +241,7 @@ def main(fn):
 
         repeat = 0
         is_repeat = True
+        DATA = User()
         while is_repeat and repeat < REPEAT_COUNT:
             is_repeat = False
             repeat += 1
@@ -349,6 +346,9 @@ def main(fn):
                                         i_f.write(r.content)
                                         idx += 1
                                         print('Loaded %s/%s %s' % (idx, total, p))
+                                except requests.exceptions.Timeout:
+                                    logging.warning('Timeout error. repeat = %s' % repeat)
+                                    is_repeat = True
                                 except Exception:
                                     logging.error(traceback.format_exc())
                                     is_repeat = True
@@ -368,9 +368,7 @@ def main(fn):
 
                 # Save xls
                 print('Create report')
-                # excel_t.save(DATA, fn.rsplit('.', 1)[0] + '.xls')
                 excel_t_xlsx.save(DATA, os.path.join(fnd, u + '.xlsx'))
-
 
             except KeyboardInterrupt:
                 logging.info('KeyboardInterrupt')
@@ -385,7 +383,7 @@ def main(fn):
 
             # check errors
             if is_repeat:
-                if 'save' in opt:
+                if OPT_SAVE_STATE in opt:
                     state_save(os.path.join(fnd, u + '.' + STATE_EXT), DATA)
                 wait_time = REPEAT_WAIT * repeat
                 plog_i('There have been errors, an attempt to download the missed things.')
