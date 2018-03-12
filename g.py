@@ -24,3 +24,6 @@ OPT_SKIP_FOLLOWERS = 'UILoginIn'.lower()
 OPT_SKIP_FOLLOWINGS = 'UILoginOut'.lower()
 OPT_LOAD_STATE = 'Load'.lower()
 OPT_SAVE_STATE = 'Save'.lower()
+OPT_KEEP_CSV = 'Keep'.lower()
+
+EXCEL_MAX_LINES = 1000000

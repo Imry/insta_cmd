@@ -323,7 +323,7 @@ def main(fn):
                             is_repeat = True
 
                 if OPT_SAVE_STATE in opt:
-                    state_save(fn + '.' + STATE_EXT, DATA)
+                    state_save(os.path.join(fnd, u + '.' + STATE_EXT), DATA)
 
                 # load images
                 if 'foto' not in opt:
@@ -393,7 +393,7 @@ def main(fn):
         if is_repeat:
             ok = False
 
-    if ok:
+    if ok and OPT_KEEP_CSV not in opt:
         plog_i('Delete CSV')
         os.remove(fn)
         plog_i('Ok!')

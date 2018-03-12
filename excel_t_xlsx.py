@@ -5,6 +5,8 @@ import openpyxl
 from openpyxl.styles import NamedStyle, Font, Alignment, colors
 from openpyxl.utils.cell import get_column_letter
 
+from g import *
+
 
 STYLE_BOLD = NamedStyle(name="bold")
 STYLE_BOLD.font = Font(bold=True)
@@ -48,24 +50,35 @@ def write_info(sheet, data, col, row):
     writer(1, 4, data.bio)
 
 
+def chunks(l):
+    """Yield successive n-sized chunks from l."""
+    for i in range(0, len(l), EXCEL_MAX_LINES):
+        yield l[i:i + EXCEL_MAX_LINES]
+
+
 def write_user_list(sheet, data, col, row, title, key):
+    shift_col = 0
+    writer = create_write(sheet, col, row)
+    writer(0, 0 + shift_col * 3, title, STYLE_BOLD)
+
     l = getattr(data, key, None)
     if not l:
-        return
+        return shift_col
 
-    writer = create_write(sheet, col, row)
-
-    writer(0, 0, title, STYLE_BOLD)
     writer(1, 0, l.count)
     writer(2, 0, 'IULogin', STYLE_BOLD)
     writer(2, 1, 'IUName', STYLE_BOLD)
     writer(2, 2, 'IUFoto', STYLE_BOLD)
+    for shift_col, c in enumerate(chunks(l.data)):
+        writer(2, 0 + shift_col * 4, 'IULogin', STYLE_BOLD)
+        writer(2, 1 + shift_col * 4, 'IUName', STYLE_BOLD)
+        writer(2, 2 + shift_col * 4, 'IUFoto', STYLE_BOLD)
 
-    cd = l.data[:1000000]
-    for idx, f in enumerate(cd):
-        writer(3 + idx, 0, f.username)
-        writer(3 + idx, 1, f.name, STYLE_WRAP)
-        writer(3 + idx, 2, *link(f.img))
+        for idx, f in enumerate(c):
+            writer(3 + idx, 0 + shift_col * 4, f.username)
+            writer(3 + idx, 1 + shift_col * 4, f.name, STYLE_WRAP)
+            writer(3 + idx, 2 + shift_col * 4, *link(f.img))
+    return shift_col
 
 
 def write_media(sheet, data, col, row):
@@ -80,37 +93,40 @@ def write_media(sheet, data, col, row):
     writer(1, 4, 'IPFoto', STYLE_BOLD)
     writer(1, 5, 'IPComments', STYLE_BOLD)
 
-    shift = 2
+    shift_row = 2
     for p in data.media.data:
-        writer(shift, 0, *link(p.url))
+        writer(shift_row, 0, *link(p.url))
         location = p.location_str
         if location != '':
             location = location.split('\n')
-            writer(shift, 1, location[0], STYLE_WRAP)
-            writer(shift + 1, 1, *link(location[1]))
-        writer(shift, 2, p.time_str)
-        writer(shift, 3, p.likes)
+            writer(shift_row, 1, location[0], STYLE_WRAP)
+            writer(shift_row + 1, 1, *link(location[1]))
+        writer(shift_row, 2, p.time_str)
+        writer(shift_row, 3, p.likes)
         m = p.media_str.split('\n')
         for idx, mm in enumerate(m):
-            writer(shift + idx, 4, *link(mm))
-        writer(shift + idx, 5, p.comment_str, STYLE_WRAP)
+            writer(shift_row + idx, 4, *link(mm))
+        writer(shift_row, 5, p.comment_str, STYLE_WRAP)
 
-        shift += max([1, len(location), len(m)])
+        shift_row += max([1, len(location), len(m)])
 
 
-def save(d, fname):
+def save(d, fn):
     book = openpyxl.Workbook()
     sheet = book.create_sheet(d.username, 0)
 
-    for i in range(19):
-        i += 1
-        if i not in [9, 13, 17]:
-            sheet.column_dimensions[get_column_letter(i)].width = 50
-    sheet.column_dimensions[get_column_letter(20)].width = 200
-
     write_info(sheet, d, 0, 0)
-    write_user_list(sheet, d, 0, 5, 'IULoginIn',  'following')
-    write_user_list(sheet, d, 0, 9, 'IULoginOut', 'followers')
-    write_media(sheet, d, 0, 13)
+    write_media(sheet, d, 0, 6)
+    shift_col_following = write_user_list(sheet, d, 0, 13, 'IULoginIn',  'following')
+    shift_col_followers = write_user_list(sheet, d, 0, 17 + shift_col_following * 4, 'IULoginOut', 'followers')
 
-    book.save(fname)
+    for i in range(1, 17 + shift_col_following * 4 + (shift_col_followers+1) * 4):
+        sheet.column_dimensions[get_column_letter(i)].width = 50
+    for i in [6, 13]:
+        sheet.column_dimensions[get_column_letter(i)].width = 10
+    for i in range(13, 13 + (shift_col_following+1) * 4, 4):
+        sheet.column_dimensions[get_column_letter(i)].width = 10
+    for i in range(17 + shift_col_following * 4, 17 + shift_col_following * 4 + (shift_col_followers+1) * 4, 4):
+        sheet.column_dimensions[get_column_letter(i)].width = 10
+
+    book.save(fn)
