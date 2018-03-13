@@ -205,14 +205,17 @@ def get_url(u, dn):
             pp = p.media_str.split('\n')
             for j, ppp in enumerate(pp):
                 ext = ppp.split('?')[0].rsplit('.', 1)[1]
-                img[os.path.join(dn, u.username, p.code, str(j) + '.' + ext)] = ppp
+                if ext in ['jpg', 'jpeg']:
+                    if not os.path.exists(os.path.join(dn, u.username, p.code)):
+                        os.makedirs(os.path.join(dn, u.username, p.code))
+                    img[os.path.join(dn, u.username, p.code, str(j) + '.' + ext)] = ppp
     return img
 
 
-def create_dirs(u, dn):
-    for p in u.media.data:
-        if not os.path.exists(os.path.join(dn, u.username, p.code)):
-            os.makedirs(os.path.join(dn, u.username, p.code))
+# def create_dirs(u, dn):
+#     for p in u.media.data:
+#         if not os.path.exists(os.path.join(dn, u.username, p.code)):
+#             os.makedirs(os.path.join(dn, u.username, p.code))
 
 
 class NeedRepeatException(Exception):
@@ -227,8 +230,7 @@ def main(fn):
         logging.info('Parsed options: %s' % opt)
         api = connect(login, pwd, '%s.cookie' % login)
         if api is None:
-            logging.error('Login error')
-            print('Login error')
+            plog_i('Login error')
             return
     except Exception:
         logging.error('Unexpected error')
@@ -327,10 +329,10 @@ def main(fn):
 
                 # load images
                 if 'foto' not in opt:
-                    print('\nLoading photos')
+                    plog_i('\nLoading photos')
                     try:
                         img = get_url(DATA, fnd)
-                        create_dirs(DATA, fnd)
+                        # create_dirs(DATA, fnd)
 
                         def save_img(data):
                             global idx, total
@@ -354,20 +356,20 @@ def main(fn):
                                     is_repeat = True
 
                         work = [(k, v) for k, v in img.items()]
-                        global total
+                        global idx, total
+                        idx = 0
                         total = len(work)
                         pool = Pool(CONCURRENT_DOWNLOADS)
                         _ = pool.map(save_img, work)
                         pool.close()
                         pool.join()
-                        print('Loaded')
+                        plog_i('Loaded')
 
                     except Exception:
                         logging.error('Unexpected error')
                         logging.error(traceback.format_exc())
-
                 # Save xls
-                print('Create report')
+                plog_i('Create report')
                 excel_t_xlsx.save(DATA, os.path.join(fnd, u + '.xlsx'))
 
             except KeyboardInterrupt:
